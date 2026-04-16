@@ -1,5 +1,8 @@
 # =============================================================
-# services/siwar_service.py — معجم سوار
+# services/siwar_service.py
+# معجم سوار — بالـ endpoints الصحيحة
+# /api/v1/external/public/senses  ← المعاني (الأفضل)
+# /api/v1/external/public/search  ← البحث العام
 # =============================================================
 
 import httpx
@@ -10,107 +13,210 @@ from dotenv import load_dotenv
 load_dotenv()
 
 SIWAR_API_KEY  = os.getenv("SIWAR_API_KEY")
-SIWAR_BASE_URL = "https://siwar.ksaa.gov.sa/api"
-TIMEOUT        = 8.0
+SIWAR_BASE_URL = "https://siwar.ksaa.gov.sa"
+TIMEOUT        = 10.0
+
+# ترتيب المعاجم من الأهم للأقل أهمية شعرياً
+PREFERRED_LEXICONS = [
+    "معجم الرياض للغة العربية المعاصرة",
+    "القاموس المحيط",
+    "المعجم الوسيط",
+    "لسان العرب",
+    "تاج العروس",
+]
 
 
 def _strip_tashkeel(text: str) -> str:
-    return re.sub(r'[\u0610-\u061A\u064B-\u065F\u0670]', '', text).strip()
+    return re.sub(r'[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06DC]', '', text).strip()
 
 
 def _is_arabic(text: str) -> bool:
-    return bool(re.compile(r'[\u0600-\u06FF]').search(text))
+    clean = _strip_tashkeel(text)
+    return bool(re.compile(r'[\u0621-\u063A\u0641-\u064A]').search(clean))
 
 
-def _get_root(entry: dict):
-    for key in ("root", "rootWord", "الجذر", "root_word"):
-        if key in entry and entry[key]:
-            return str(entry[key]).strip()
-    return None
-
-
-def _extract_poetic_definition(data) -> dict:
-    """يستخرج التعريف مع أولوية للمعنى الشعري."""
-    if isinstance(data, list):
-        entries = data
-    elif isinstance(data, dict):
-        entries = []
-        for key in ("results", "data", "items", "entries"):
-            if key in data and data[key]:
-                val = data[key]
-                entries = val if isinstance(val, list) else [val]
-                break
-        if not entries:
-            entries = [data]
-    else:
+def _parse_senses_response(data: list) -> dict:
+    """
+    يحلل رد /public/senses ويُرجع التعاريف مرتبة.
+    الرد شكله:
+    [
+      {"senses": ["تعريف1", "تعريف2"], "lemma": "أمل", "lexiconName": "القاموس المحيط"},
+      ...
+    ]
+    """
+    if not isinstance(data, list) or not data:
         return {}
 
-    poetic_keywords = ["شعر", "أدب", "مجاز", "استعار", "كناي", "بلاغ", "شاعر"]
-    best = None
-    fallback = None
+    # ── نرتب بناءً على المعجم المفضل ─────────────────────────
+    sorted_entries = sorted(
+        data,
+        key=lambda x: next(
+            (i for i, lex in enumerate(PREFERRED_LEXICONS)
+             if lex in x.get("lexiconName", "")),
+            len(PREFERRED_LEXICONS)  # غير موجود في القائمة = آخر
+        )
+    )
 
-    for entry in entries[:5]:
-        if not isinstance(entry, dict):
-            continue
-        definition = None
-        for key in ("definition", "meaning", "المعنى", "التعريف", "text"):
-            if key in entry and entry[key]:
-                definition = str(entry[key]).strip()
-                break
-        if not definition:
-            continue
-        if any(kw in definition for kw in poetic_keywords):
-            best = {"definition": definition, "root": _get_root(entry)}
-            break
-        elif fallback is None:
-            fallback = {"definition": definition, "root": _get_root(entry)}
+    all_definitions = []
+    root = None
 
-    return best or fallback or {}
+    for entry in sorted_entries:
+        lexicon_name = entry.get("lexiconName", "")
+        senses       = entry.get("senses", [])
+
+        for sense in senses:
+            if sense and len(sense.strip()) > 5:
+                all_definitions.append({
+                    "definition":  sense.strip(),
+                    "source_dict": lexicon_name,
+                    "root":        None,
+                })
+
+    if not all_definitions:
+        return {}
+
+    # دمج كل التعاريف في نص واحد للبرومت
+    combined_parts = []
+    for i, d in enumerate(all_definitions[:6]):  # أول 6 تعاريف
+        lexicon = d["source_dict"]
+        defn    = d["definition"]
+        combined_parts.append(f"{i+1}. [{lexicon}] {defn}")
+
+    combined = "\n".join(combined_parts)
+
+    return {
+        "definition":      combined,
+        "all_definitions": all_definitions,
+        "root":            root,
+    }
+
+
+def _parse_search_response(data: list) -> dict:
+    """
+    يحلل رد /public/search كـ fallback.
+    """
+    if not isinstance(data, list) or not data:
+        return {}
+
+    all_definitions = []
+
+    for entry in data:
+        lexicon_name = entry.get("lexiconName", "")
+        lemma        = entry.get("lemma", "")
+        root_raw     = entry.get("root", "")
+        senses       = entry.get("senses", [])
+
+        for sense in senses:
+            defn = sense.get("definition", "") if isinstance(sense, dict) else str(sense)
+            if defn and len(defn.strip()) > 5:
+                all_definitions.append({
+                    "definition":  defn.strip(),
+                    "source_dict": lexicon_name,
+                    "root":        root_raw or None,
+                })
+
+    if not all_definitions:
+        return {}
+
+    # ترتيب بناءً على المعجم المفضل
+    all_definitions.sort(
+        key=lambda x: next(
+            (i for i, lex in enumerate(PREFERRED_LEXICONS)
+             if lex in x.get("source_dict", "")),
+            len(PREFERRED_LEXICONS)
+        )
+    )
+
+    combined_parts = []
+    for i, d in enumerate(all_definitions[:6]):
+        lexicon = d["source_dict"]
+        defn    = d["definition"]
+        combined_parts.append(f"{i+1}. [{lexicon}] {defn}")
+
+    root = next((d["root"] for d in all_definitions if d.get("root")), None)
+
+    return {
+        "definition":      "\n".join(combined_parts),
+        "all_definitions": all_definitions,
+        "root":            root,
+    }
 
 
 async def get_siwar_definition(word: str) -> dict:
-    NOT_FOUND = {"found": False, "definition": None, "root": None, "is_arabic": True}
+    """
+    يبحث عن الكلمة في معجم سوار.
+
+    Returns:
+        {
+          "found": bool,
+          "is_arabic": bool,
+          "definition": str,         ← كل التعاريف مرتبة للبرومت
+          "all_definitions": list,
+          "root": str | None
+        }
+    """
+    NOT_FOUND = {
+        "found":           False,
+        "is_arabic":       True,
+        "definition":      None,
+        "all_definitions": [],
+        "root":            None,
+    }
 
     if not _is_arabic(word):
         return {**NOT_FOUND, "is_arabic": False}
 
     if not SIWAR_API_KEY:
+        print("⚠️ SIWAR_API_KEY مفقود")
         return NOT_FOUND
 
-    clean = _strip_tashkeel(word)
+    clean   = _strip_tashkeel(word)
     headers = {"apikey": SIWAR_API_KEY, "Accept": "application/json"}
 
+    # ── المحاولة 1: senses (الأفضل — يرجع المعاني مباشرة) ────
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
             resp = await client.get(
-                f"{SIWAR_BASE_URL}/search",
+                f"{SIWAR_BASE_URL}/api/v1/external/public/senses",
                 headers=headers,
-                params={"query": clean, "limit": 5},
+                params={"query": clean, "limit": 10},
             )
-        if resp.status_code == 200:
-            entry = _extract_poetic_definition(resp.json())
-            if entry.get("definition"):
-                return {"found": True, "is_arabic": True, **entry}
 
-        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-            resp2 = await client.get(
-                f"{SIWAR_BASE_URL}/lookup",
-                headers=headers,
-                params={"word": clean},
-            )
-        if resp2.status_code == 200:
-            entry = _extract_poetic_definition(resp2.json())
-            if entry.get("definition"):
-                return {"found": True, "is_arabic": True, **entry}
+        if resp.status_code == 200:
+            data   = resp.json()
+            result = _parse_senses_response(data)
+            if result.get("definition"):
+                print(f"✅ سوار وجد '{word}' في senses")
+                return {"found": True, "is_arabic": True, **result}
 
     except httpx.TimeoutException:
-        print(f"⏱️ Siwar timeout: {clean}")
+        print(f"⏱️ Siwar timeout (senses): {clean}")
     except Exception as e:
-        print(f"❌ Siwar error: {e}")
+        print(f"❌ Siwar error (senses): {e}")
 
+    # ── المحاولة 2: search (fallback) ────────────────────────
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            resp2 = await client.get(
+                f"{SIWAR_BASE_URL}/api/v1/external/public/search",
+                headers=headers,
+                params={"query": clean, "limit": 10},
+            )
+
+        if resp2.status_code == 200:
+            data2   = resp2.json()
+            result2 = _parse_search_response(data2)
+            if result2.get("definition"):
+                print(f"✅ سوار وجد '{word}' في search")
+                return {"found": True, "is_arabic": True, **result2}
+
+    except httpx.TimeoutException:
+        print(f"⏱️ Siwar timeout (search): {clean}")
+    except Exception as e:
+        print(f"❌ Siwar error (search): {e}")
+
+    print(f"ℹ️ سوار ما وجد '{word}' — GPT يعتمد على معرفته")
     return NOT_FOUND
-
-
 
 
 
@@ -219,3 +325,5 @@ async def get_siwar_definition(word: str) -> dict:
 #         print(f"❌ Siwar error: {e}")
 
 #     return NOT_FOUND
+
+

@@ -13,30 +13,25 @@ class TreasuresRequest(BaseModel):
     verse:       Optional[str] = Field(default=None, max_length=300)
     is_followup: bool          = Field(default=False)
 
-
 class SiwarInfo(BaseModel):
     found:      bool
     definition: Optional[str] = None
     root:       Optional[str] = None
 
-
 class MeaningEntry(BaseModel):
     title:       str
     explanation: str
-    source:      str = "gpt"   # "siwar" أو "gpt"
-
+    source:      str = "gpt"
 
 class ExampleVerse(BaseModel):
     verse:  str
     poet:   str
-    source: str = "gpt"        # "database" أو "gpt"
-
+    source: str = "gpt"
 
 class TreasuresResponse(BaseModel):
     status:          str
-    # حالة ok
     word:            Optional[str]         = None
-    plural:          Optional[str]         = None   # ← جمع الكلمة
+    plural:          Optional[str]         = None
     primary_meaning: Optional[str]         = None
     meanings:        list[MeaningEntry]    = []
     poetic_usage:    Optional[str]         = None
@@ -45,7 +40,6 @@ class TreasuresResponse(BaseModel):
     simple_tip:      Optional[str]         = None
     confidence:      Optional[str]         = None
     siwar:           Optional[SiwarInfo]   = None
-    # حالة error
     error_type:      Optional[str]         = None
     message:         Optional[str]         = None
 
@@ -53,7 +47,8 @@ class TreasuresResponse(BaseModel):
 # ── مزاج اليوم ────────────────────────────────────────────────
 
 class MoodRequest(BaseModel):
-    user_input: str = Field(..., min_length=1, max_length=500)
+    user_input: str              = Field(..., min_length=1, max_length=500)
+    history:    list[dict]       = Field(default=[])  # المحادثة السابقة
 
 
 class PoemEntry(BaseModel):
@@ -63,15 +58,106 @@ class PoemEntry(BaseModel):
 
 
 class MoodResponse(BaseModel):
-    feeling_detected:  str
-    feeling_intensity: str
-    category_used:     str
-    opening_line:      str
-    poems:             list[PoemEntry]
-    closing_line:      str
+    """
+    response_type:
+      "poems"    → عرض الأبيات
+      "clarify"  → اسأل للتوضيح
+      "redirect" → أعده للموضوع
+      "confirm"  → تأكيد قبل العرض
+    """
+    response_type: str   # poems | clarify | redirect | confirm
+
+    # ── حالة poems ────────────────────────────────────────────
+    feeling_detected:  Optional[str]       = None
+    feeling_intensity: Optional[str]       = None
+    category_used:     Optional[str]       = None
+    opening_line:      Optional[str]       = None
+    poems:             list[PoemEntry]     = []
+    closing_line:      Optional[str]       = None
+
+    # ── حالة clarify / redirect / confirm ─────────────────────
+    message:            Optional[str]      = None
+    suggested_categories: list[str]        = []
+    detected_theme:     Optional[str]      = None
+    category_guess:     Optional[str]      = None
 
 
-# TODO: WriteRequest / JourneyRequest / InterpretRequest
+# ── TODO: باقي الصفحات ────────────────────────────────────────
+
+# # =============================================================
+# # schemas.py
+# # =============================================================
+
+# from pydantic import BaseModel, Field
+# from typing import Optional
+
+
+# # ── كنوز الكلمات ──────────────────────────────────────────────
+
+# class TreasuresRequest(BaseModel):
+#     word:        str           = Field(..., min_length=1, max_length=60)
+#     verse:       Optional[str] = Field(default=None, max_length=300)
+#     is_followup: bool          = Field(default=False)
+
+
+# class SiwarInfo(BaseModel):
+#     found:      bool
+#     definition: Optional[str] = None
+#     root:       Optional[str] = None
+
+
+# class MeaningEntry(BaseModel):
+#     title:       str
+#     explanation: str
+#     source:      str = "gpt"   # "siwar" أو "gpt"
+
+
+# class ExampleVerse(BaseModel):
+#     verse:  str
+#     poet:   str
+#     source: str = "gpt"        # "database" أو "gpt"
+
+
+# class TreasuresResponse(BaseModel):
+#     status:          str
+#     # حالة ok
+#     word:            Optional[str]         = None
+#     plural:          Optional[str]         = None   # ← جمع الكلمة
+#     primary_meaning: Optional[str]         = None
+#     meanings:        list[MeaningEntry]    = []
+#     poetic_usage:    Optional[str]         = None
+#     symbolism:       Optional[str]         = None
+#     example_verses:  list[ExampleVerse]    = []
+#     simple_tip:      Optional[str]         = None
+#     confidence:      Optional[str]         = None
+#     siwar:           Optional[SiwarInfo]   = None
+#     # حالة error
+#     error_type:      Optional[str]         = None
+#     message:         Optional[str]         = None
+
+
+# # ── مزاج اليوم ────────────────────────────────────────────────
+
+# class MoodRequest(BaseModel):
+#     user_input: str = Field(..., min_length=1, max_length=500)
+
+
+# class PoemEntry(BaseModel):
+#     verse:       str
+#     poet:        str
+#     explanation: str
+
+
+# class MoodResponse(BaseModel):
+#     feeling_detected:  str
+#     feeling_intensity: str
+#     category_used:     str
+#     opening_line:      str
+#     poems:             list[PoemEntry]
+#     closing_line:      str
+
+
+# # TODO: WriteRequest / JourneyRequest / InterpretRequest
 
 
 

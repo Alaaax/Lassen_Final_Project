@@ -1,15 +1,10 @@
-# # يستقبل الطلبات من الفرونت
-# # يحدد أي endpoint انطلب
-# # ينادي الخدمة المناسبة
-# # يرجع JSON
-
-
 # =============================================================
 # main.py — FastAPI
 # تشغيل: uvicorn main:app --reload --port 8000
 # =============================================================
 
 import os
+import asyncio
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -19,9 +14,9 @@ from schemas import (
     MeaningEntry, ExampleVerse,
     MoodRequest, MoodResponse, PoemEntry,
 )
-from services.siwar_service   import get_siwar_definition
-from services.ai_service      import explain_word, get_mood_poems
-from services.verse_searcher  import search_verses_for_word
+from services.siwar_service    import get_siwar_definition
+from services.ai_service       import explain_word, get_mood_response
+from services.verse_searcher   import search_verses_for_word
 from services.poetry_retriever import get_poems_for_mood, get_db_stats
 
 load_dotenv()
@@ -41,7 +36,6 @@ app.add_middleware(
 async def root():
     return {"status": "✅ يعمل"}
 
-
 @app.get("/health")
 async def health():
     return {
@@ -57,18 +51,13 @@ async def health():
 
 @app.post("/api/treasures/explain", response_model=TreasuresResponse)
 async def explain_arabic_word(req: TreasuresRequest):
-    """
-    1. تحقق من الكلمة (عربية؟ معروفة؟)
-    2. اسأل معجم سوار عن المعنى الشعري
-    3. ابحث في الداتاست عن أبيات تحتوي الكلمة
-    4. أرسل كل شيء لـ GPT
-    5. أرجع النتيجة
-    """
+    # الخطوة 1: سوار + بحث الداتاست بالتوازي (أسرع)
+    siwar, db_verses = await asyncio.gather(
+        get_siwar_definition(req.word),
+        asyncio.to_thread(search_verses_for_word, req.word, 3),
+    )
 
-    # الخطوة 1: معجم سوار + تحقق من الكلمة
-    siwar = await get_siwar_definition(req.word)
-
-    # إذا الكلمة مو عربية → أرجع خطأ مباشرة
+    # تحقق من عربية الكلمة
     if not siwar.get("is_arabic", True):
         return TreasuresResponse(
             status     = "error",
@@ -76,10 +65,7 @@ async def explain_arabic_word(req: TreasuresRequest):
             message    = "الكلمة اللي كتبتها مو عربية! اكتب كلمة بالحروف العربية.",
         )
 
-    # الخطوة 2: بحث في الداتاست عن أبيات
-    db_verses = search_verses_for_word(req.word, max_results=5)
-
-    # الخطوة 3: GPT يشرح
+    # الخطوة 2: GPT يشرح
     try:
         gpt_result = await explain_word(
             word         = req.word,
@@ -91,8 +77,6 @@ async def explain_arabic_word(req: TreasuresRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"خطأ GPT: {str(e)}")
 
-    # الخطوة 4: بناء الرد
-    # ── إذا GPT قرر إن الكلمة غير صحيحة ─────────────────────
     if gpt_result.get("status") == "error":
         return TreasuresResponse(
             status     = "error",
@@ -100,16 +84,15 @@ async def explain_arabic_word(req: TreasuresRequest):
             message    = gpt_result.get("message", "تعذّر شرح هذه الكلمة"),
         )
 
-    # ── بناء المعاني ──────────────────────────────────────────
     meanings = [
         MeaningEntry(
             title       = m.get("title", ""),
             explanation = m.get("explanation", ""),
+            source      = m.get("source", "gpt"),
         )
         for m in gpt_result.get("meanings", [])
     ]
 
-    # ── بناء الأبيات ──────────────────────────────────────────
     example_verses = [
         ExampleVerse(
             verse  = v.get("verse", ""),
@@ -122,6 +105,7 @@ async def explain_arabic_word(req: TreasuresRequest):
     return TreasuresResponse(
         status          = "ok",
         word            = req.word,
+        plural          = gpt_result.get("plural"),
         primary_meaning = gpt_result.get("primary_meaning", ""),
         meanings        = meanings,
         poetic_usage    = gpt_result.get("poetic_usage", ""),
@@ -143,33 +127,72 @@ async def explain_arabic_word(req: TreasuresRequest):
 
 @app.post("/api/mood/poems", response_model=MoodResponse)
 async def mood_poems(req: MoodRequest):
+    """
+    1. يكتشف التصنيف المبدئي
+    2. يجلب أبيات من الداتاست
+    3. GPT يقرر نوع الرد (poems/clarify/redirect/confirm)
+    4. يُرجع النتيجة
+    """
+
+    # الخطوة 1+2: جلب الأبيات
     try:
         category, poems = get_poems_for_mood(req.user_input, count=20)
     except FileNotFoundError as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+    # الخطوة 3: GPT يقرر
     try:
-        result = await get_mood_poems(req.user_input, category, poems)
+        result = await get_mood_response(
+            user_input           = req.user_input,
+            conversation_history = req.history,
+            poems                = poems,
+            category             = category,
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"خطأ GPT: {str(e)}")
 
-    poem_entries = [
-        PoemEntry(
-            verse       = p.get("verse", ""),
-            poet        = p.get("poet", "مجهول"),
-            explanation = p.get("explanation", ""),
-        )
-        for p in result.get("poems", [])
-    ]
+    response_type = result.get("response_type", "redirect")
 
-    return MoodResponse(
-        feeling_detected  = result.get("feeling_detected", ""),
-        feeling_intensity = result.get("feeling_intensity", ""),
-        category_used     = result.get("category_used", category),
-        opening_line      = result.get("opening_line", ""),
-        poems             = poem_entries,
-        closing_line      = result.get("closing_line", ""),
-    )
+    # ── بناء الرد حسب النوع ───────────────────────────────────
+    if response_type == "poems":
+        poem_entries = [
+            PoemEntry(
+                verse       = p.get("verse", ""),
+                poet        = p.get("poet", "مجهول"),
+                explanation = p.get("explanation", ""),
+            )
+            for p in result.get("poems", [])
+        ]
+        return MoodResponse(
+            response_type     = "poems",
+            feeling_detected  = result.get("feeling_detected", ""),
+            feeling_intensity = result.get("feeling_intensity", ""),
+            category_used     = result.get("category_used", category),
+            opening_line      = result.get("opening_line", ""),
+            poems             = poem_entries,
+            closing_line      = result.get("closing_line", ""),
+        )
+
+    elif response_type == "clarify":
+        return MoodResponse(
+            response_type        = "clarify",
+            message              = result.get("message", ""),
+            suggested_categories = result.get("suggested_categories", []),
+        )
+
+    elif response_type == "confirm":
+        return MoodResponse(
+            response_type  = "confirm",
+            message        = result.get("message", ""),
+            detected_theme = result.get("detected_theme", ""),
+            category_guess = result.get("category_guess", ""),
+        )
+
+    else:  # redirect
+        return MoodResponse(
+            response_type = "redirect",
+            message       = result.get("message", ""),
+        )
 
 
 # =============================================================
@@ -178,6 +201,193 @@ async def mood_poems(req: MoodRequest):
 # @app.post("/api/write/generate")
 # @app.post("/api/journey/explore")
 # @app.post("/api/interpret/verses")
+
+
+
+
+
+
+
+# # # يستقبل الطلبات من الفرونت
+# # # يحدد أي endpoint انطلب
+# # # ينادي الخدمة المناسبة
+# # # يرجع JSON
+
+
+# # =============================================================
+# # main.py — FastAPI
+# # تشغيل: uvicorn main:app --reload --port 8000
+# # =============================================================
+
+# import os
+# from fastapi import FastAPI, HTTPException
+# from fastapi.middleware.cors import CORSMiddleware
+# from dotenv import load_dotenv
+
+# from schemas import (
+#     TreasuresRequest, TreasuresResponse, SiwarInfo,
+#     MeaningEntry, ExampleVerse,
+#     MoodRequest, MoodResponse, PoemEntry,
+# )
+# from services.siwar_service   import get_siwar_definition
+# from services.ai_service      import explain_word, get_mood_poems
+# from services.verse_searcher  import search_verses_for_word
+# from services.poetry_retriever import get_poems_for_mood, get_db_stats
+
+# load_dotenv()
+
+# app = FastAPI(title="بيت القصيد API", version="1.0.0")
+
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=["*"],
+#     allow_credentials=False,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
+
+
+# @app.get("/")
+# async def root():
+#     return {"status": "✅ يعمل"}
+
+
+# @app.get("/health")
+# async def health():
+#     return {
+#         "openai":   "✅" if os.getenv("OPENAI_API_KEY") else "❌ مفقود",
+#         "siwar":    "✅" if os.getenv("SIWAR_API_KEY")  else "❌ مفقود",
+#         "poems_db": get_db_stats(),
+#     }
+
+
+# # =============================================================
+# # 🔌 كنوز الكلمات — POST /api/treasures/explain
+# # =============================================================
+
+# @app.post("/api/treasures/explain", response_model=TreasuresResponse)
+# async def explain_arabic_word(req: TreasuresRequest):
+#     """
+#     1. تحقق من الكلمة (عربية؟ معروفة؟)
+#     2. اسأل معجم سوار عن المعنى الشعري
+#     3. ابحث في الداتاست عن أبيات تحتوي الكلمة
+#     4. أرسل كل شيء لـ GPT
+#     5. أرجع النتيجة
+#     """
+
+#     # الخطوة 1: معجم سوار + تحقق من الكلمة
+#     siwar = await get_siwar_definition(req.word)
+
+#     # إذا الكلمة مو عربية → أرجع خطأ مباشرة
+#     if not siwar.get("is_arabic", True):
+#         return TreasuresResponse(
+#             status     = "error",
+#             error_type = "not_arabic",
+#             message    = "الكلمة اللي كتبتها مو عربية! اكتب كلمة بالحروف العربية.",
+#         )
+
+#     # الخطوة 2: بحث في الداتاست عن أبيات
+#     db_verses = search_verses_for_word(req.word, max_results=5)
+
+#     # الخطوة 3: GPT يشرح
+#     try:
+#         gpt_result = await explain_word(
+#             word         = req.word,
+#             siwar_result = siwar,
+#             db_verses    = db_verses,
+#             verse        = req.verse,
+#             is_followup  = req.is_followup,
+#         )
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=f"خطأ GPT: {str(e)}")
+
+#     # الخطوة 4: بناء الرد
+#     # ── إذا GPT قرر إن الكلمة غير صحيحة ─────────────────────
+#     if gpt_result.get("status") == "error":
+#         return TreasuresResponse(
+#             status     = "error",
+#             error_type = gpt_result.get("error_type", "unknown_word"),
+#             message    = gpt_result.get("message", "تعذّر شرح هذه الكلمة"),
+#         )
+
+#     # ── بناء المعاني ──────────────────────────────────────────
+#     meanings = [
+#         MeaningEntry(
+#             title       = m.get("title", ""),
+#             explanation = m.get("explanation", ""),
+#         )
+#         for m in gpt_result.get("meanings", [])
+#     ]
+
+#     # ── بناء الأبيات ──────────────────────────────────────────
+#     example_verses = [
+#         ExampleVerse(
+#             verse  = v.get("verse", ""),
+#             poet   = v.get("poet", "مجهول"),
+#             source = v.get("source", "gpt"),
+#         )
+#         for v in gpt_result.get("example_verses", [])
+#     ]
+
+#     return TreasuresResponse(
+#         status          = "ok",
+#         word            = req.word,
+#         primary_meaning = gpt_result.get("primary_meaning", ""),
+#         meanings        = meanings,
+#         poetic_usage    = gpt_result.get("poetic_usage", ""),
+#         symbolism       = gpt_result.get("symbolism", ""),
+#         example_verses  = example_verses,
+#         simple_tip      = gpt_result.get("simple_tip", ""),
+#         confidence      = gpt_result.get("confidence", "medium"),
+#         siwar           = SiwarInfo(
+#             found      = siwar["found"],
+#             definition = siwar.get("definition"),
+#             root       = siwar.get("root"),
+#         ),
+#     )
+
+
+# # =============================================================
+# # 🔌 مزاج اليوم — POST /api/mood/poems
+# # =============================================================
+
+# @app.post("/api/mood/poems", response_model=MoodResponse)
+# async def mood_poems(req: MoodRequest):
+#     try:
+#         category, poems = get_poems_for_mood(req.user_input, count=20)
+#     except FileNotFoundError as e:
+#         raise HTTPException(status_code=500, detail=str(e))
+
+#     try:
+#         result = await get_mood_poems(req.user_input, category, poems)
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=f"خطأ GPT: {str(e)}")
+
+#     poem_entries = [
+#         PoemEntry(
+#             verse       = p.get("verse", ""),
+#             poet        = p.get("poet", "مجهول"),
+#             explanation = p.get("explanation", ""),
+#         )
+#         for p in result.get("poems", [])
+#     ]
+
+#     return MoodResponse(
+#         feeling_detected  = result.get("feeling_detected", ""),
+#         feeling_intensity = result.get("feeling_intensity", ""),
+#         category_used     = result.get("category_used", category),
+#         opening_line      = result.get("opening_line", ""),
+#         poems             = poem_entries,
+#         closing_line      = result.get("closing_line", ""),
+#     )
+
+
+# # =============================================================
+# # TODO: باقي الصفحات
+# # =============================================================
+# # @app.post("/api/write/generate")
+# # @app.post("/api/journey/explore")
+# # @app.post("/api/interpret/verses")
 
 
 
