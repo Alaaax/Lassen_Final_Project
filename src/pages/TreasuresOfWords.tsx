@@ -1,30 +1,27 @@
 /**
- * صفحة كنوز الكلمات - مربوطة بالباك اند
- * ─────────────────────────────────────────
- * الدالة الوحيدة التي تتصل بالباك اند هي: explainWord من api.ts
- * كل شيء ثاني هو UI فقط
+ * صفحة كنوز الكلمات
+ * - جمع الكلمة تحت الاسم
+ * - شارة "معجم سوار" فقط على المعاني المأخوذة من المعجم
+ * - شارة "من قاعدة البيانات" على الأبيات الحقيقية
  */
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { BookOpen, Search, Volume2, Loader2, RefreshCw, Info } from "lucide-react";
+import { BookOpen, Search, Volume2, Loader2, RefreshCw, Info, Database } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import PageLayout from "@/components/PageLayout";
 import ArabicLettersBg from "@/components/ArabicLettersBg";
 import { useHistory } from "@/contexts/HistoryContext";
-import { explainWord, TreasuresResponse, APIError } from "@/services/api";
+import {
+  explainWord, TreasuresResponse, MeaningEntry, ExampleVerse, APIError
+} from "@/services/api";
 
-// ── نوع البطاقة المخزّنة محلياً ────────────────────────────────
-interface WordEntry extends TreasuresResponse {
-  id: string; // word + timestamp
-}
-
-// ── مؤشر الثقة بالشرح ─────────────────────────────────────────
+// ── مؤشر الثقة ────────────────────────────────────────────────
 const ConfidenceBadge = ({ level }: { level: string }) => {
   const map: Record<string, { label: string; color: string }> = {
-    high:   { label: "تأكيد عالٍ",   color: "text-emerald-500 border-emerald-500/30 bg-emerald-500/5"  },
-    medium: { label: "تأكيد معقول", color: "text-amber-500  border-amber-500/30  bg-amber-500/5"   },
-    low:    { label: "كلمة نادرة",   color: "text-rose-400   border-rose-400/30   bg-rose-400/5"    },
+    high:   { label: "تأكيد عالٍ",   color: "text-emerald-500 border-emerald-500/30" },
+    medium: { label: "تأكيد معقول", color: "text-amber-500  border-amber-500/30"   },
+    low:    { label: "كلمة نادرة",   color: "text-rose-400   border-rose-400/30"    },
   };
   const { label, color } = map[level] ?? map.medium;
   return (
@@ -34,7 +31,48 @@ const ConfidenceBadge = ({ level }: { level: string }) => {
   );
 };
 
-// ── أيقونة القلم ───────────────────────────────────────────────
+// ── بطاقة بيت شعري ────────────────────────────────────────────
+const VerseCard = ({ verse, index }: { verse: ExampleVerse; index: number }) => (
+  <motion.div
+    initial={{ opacity: 0, y: 6 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ delay: index * 0.1 }}
+    className="p-3 rounded-lg border border-gold/15 bg-gold/5 space-y-1"
+  >
+    <blockquote className="font-display text-sm text-foreground leading-loose text-center">
+      {verse.verse}
+    </blockquote>
+    <div className="flex items-center justify-center gap-2 flex-wrap">
+      <p className="font-ui text-[10px] text-gold/60">— {verse.poet}</p>
+      {/* شارة المصدر — فقط إذا من الداتاست */}
+      {verse.source === "database" && (
+        <span className="flex items-center gap-0.5 text-[9px] text-emerald-500/70 border border-emerald-500/20 rounded-full px-1.5 py-0.5">
+          <Database className="h-2 w-2" /> من قاعدة البيانات
+        </span>
+      )}
+    </div>
+  </motion.div>
+);
+
+// ── بطاقة معنى واحد ───────────────────────────────────────────
+const MeaningCard = ({ meaning, index }: { meaning: MeaningEntry; index: number }) => (
+  <div className="space-y-0.5">
+    <div className="flex items-center gap-2">
+      <p className="font-ui text-xs text-gold/70">{index + 1}. {meaning.title}</p>
+      {/* شارة معجم سوار — فقط إذا المعنى من المعجم */}
+      {meaning.source === "siwar" && (
+        <span className="text-[9px] text-blue-400/70 border border-blue-400/20 rounded-full px-1.5 py-0.5 font-ui">
+          معجم سوار
+        </span>
+      )}
+    </div>
+    <p className="font-body text-xs text-foreground/70 leading-relaxed pr-3">
+      {meaning.explanation}
+    </p>
+  </div>
+);
+
+// ── أيقونة القلم ──────────────────────────────────────────────
 const PenIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
     stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -43,6 +81,8 @@ const PenIcon = () => (
 );
 
 // =============================================================
+interface WordEntry { id: string; data: TreasuresResponse }
+
 const TreasuresOfWords = () => {
   const [input,       setInput]       = useState("");
   const [verse,       setVerse]       = useState("");
@@ -53,28 +93,24 @@ const TreasuresOfWords = () => {
   const [error,       setError]       = useState<string | null>(null);
   const { addHistoryItem } = useHistory();
 
-  // ── الدالة الرئيسية: تستدعي الباك اند ────────────────────────
   const handleSearch = async (followup = false) => {
-    const word = followup ? entries[activeIndex]?.word : input.trim();
+    const word = followup ? entries[activeIndex]?.data.word! : input.trim();
     if (!word) return;
-
     setIsLoading(true);
     setError(null);
-
     if (!followup) addHistoryItem("treasures", "كنوز الكلمات", word);
 
     try {
-      // ── هنا يصير الاتصال بالباك اند ──────────────────────────
-      const result = await explainWord(
-        word,
-        verse.trim() || undefined,
-        followup,
-      );
+      const result = await explainWord(word, verse.trim() || undefined, followup);
 
-      const entry: WordEntry = { ...result, id: `${word}-${Date.now()}` };
+      if (result.status === "error") {
+        setError(result.message || "تعذّر شرح هذه الكلمة");
+        return;
+      }
+
+      const entry: WordEntry = { id: `${word}-${Date.now()}`, data: result };
 
       if (followup) {
-        // استبدال العنصر الحالي بشرح أوضح
         setEntries(prev => prev.map((e, i) => i === activeIndex ? entry : e));
       } else {
         setEntries(prev => [entry, ...prev]);
@@ -84,45 +120,33 @@ const TreasuresOfWords = () => {
         setShowVerse(false);
       }
     } catch (e) {
-      if (e instanceof APIError) {
-        setError(e.message);
-      } else {
-        setError("تعذّر الاتصال بالسيرفر، تأكد من تشغيل الباك اند.");
-      }
+      setError(e instanceof APIError ? e.message : "تعذّر الاتصال بالسيرفر");
     } finally {
       setIsLoading(false);
     }
   };
 
-  const speakWord = (word: string) => {
-    const u = new SpeechSynthesisUtterance(word);
-    u.lang = "ar-SA";
-    speechSynthesis.speak(u);
-  };
-
-  const activeEntry = entries[activeIndex];
+  const active = entries[activeIndex];
 
   return (
     <PageLayout title="كنوز الكلمات">
       <div className="relative min-h-[calc(100vh-3.5rem)] p-6">
         <ArabicLettersBg />
-
         <div className="max-w-6xl mx-auto relative z-10">
 
-          {/* ── Header ─────────────────────────────────────────── */}
+          {/* ── Header ── */}
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
+            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
             className="text-center mb-10"
           >
             <BookOpen className="h-10 w-10 text-gold mx-auto mb-4" />
             <h2 className="font-display text-3xl text-foreground mb-2">كنوز الكلمات</h2>
             <p className="font-body text-muted-foreground">
-              اكتب أي كلمة عربية صعبة واحصل على شرحها بعامية مفهومة
+              اكتب أي كلمة عربية صعبة واحصل على شرحها الشعري
             </p>
           </motion.div>
 
-          {/* ── حقل الإدخال ─────────────────────────────────────── */}
+          {/* ── حقل الإدخال ── */}
           <div className="max-w-lg mx-auto mb-4">
             <div className="relative glass-card p-2 flex items-center gap-2 glow-gold">
               <div className="absolute right-4 top-1/2 -translate-y-1/2 text-gold/40 pointer-events-none">
@@ -131,8 +155,8 @@ const TreasuresOfWords = () => {
               <Input
                 value={input}
                 onChange={e => setInput(e.target.value)}
-                placeholder="اكتب الكلمة هنا... مثال: سَلَوتُ"
-                className="font-display text-lg border-0 bg-transparent pr-10 focus-visible:ring-0 placeholder:text-muted-foreground/40"
+                placeholder="مثال: عنقاء، النوى، سَلَوتُ..."
+                className="font-display text-lg border-0 bg-transparent pr-10 focus-visible:ring-0"
                 onKeyDown={e => e.key === "Enter" && handleSearch()}
                 disabled={isLoading}
               />
@@ -148,10 +172,9 @@ const TreasuresOfWords = () => {
               </Button>
             </div>
 
-            {/* زر إضافة البيت الشعري */}
             <button
               onClick={() => setShowVerse(v => !v)}
-              className="mt-2 text-xs text-muted-foreground/60 hover:text-gold transition-colors flex items-center gap-1 mx-auto"
+              className="mt-2 text-xs text-muted-foreground/50 hover:text-gold transition-colors flex items-center gap-1 mx-auto"
             >
               <Info className="h-3 w-3" />
               {showVerse ? "إخفاء" : "أضف البيت الشعري للسياق (اختياري)"}
@@ -160,16 +183,13 @@ const TreasuresOfWords = () => {
             <AnimatePresence>
               {showVerse && (
                 <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="overflow-hidden"
+                  initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }} className="overflow-hidden"
                 >
                   <Input
-                    value={verse}
-                    onChange={e => setVerse(e.target.value)}
-                    placeholder="البيت الشعري الذي فيه الكلمة..."
-                    className="mt-2 font-display text-sm border-gold/20 bg-transparent placeholder:text-muted-foreground/30"
+                    value={verse} onChange={e => setVerse(e.target.value)}
+                    placeholder="البيت الشعري الذي وردت فيه الكلمة..."
+                    className="mt-2 font-display text-sm border-gold/20 bg-transparent"
                     disabled={isLoading}
                   />
                 </motion.div>
@@ -177,118 +197,140 @@ const TreasuresOfWords = () => {
             </AnimatePresence>
           </div>
 
-          {/* ── رسالة الخطأ ─────────────────────────────────────── */}
+          {/* ── رسالة الخطأ ── */}
           <AnimatePresence>
             {error && (
               <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="max-w-lg mx-auto mb-6 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-sm text-center font-body"
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                className="max-w-lg mx-auto mb-6 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-sm text-center"
               >
                 {error}
               </motion.div>
             )}
           </AnimatePresence>
 
-          {/* ── الكتاب المفتوح ──────────────────────────────────── */}
+          {/* ── الكتاب المفتوح ── */}
           <AnimatePresence mode="wait">
-            {activeEntry ? (
+            {active ? (
               <motion.div
-                key={activeEntry.id}
+                key={active.id}
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
                 className="grid grid-cols-1 md:grid-cols-2 gap-0 max-w-5xl mx-auto"
               >
-                {/* الصفحة اليمنى - الكلمة */}
-                <div className="glass-card rounded-l-none md:rounded-r-2xl md:rounded-l-none p-8 md:p-12 flex flex-col items-center justify-center text-center bg-gradient-to-br from-card to-secondary/30">
+                {/* ── الصفحة اليمنى ── */}
+                <div className="glass-card rounded-l-none md:rounded-r-2xl md:rounded-l-none p-8 flex flex-col items-center justify-center text-center bg-gradient-to-br from-card to-secondary/30">
 
+                  {/* زر الصوت */}
                   <Button
                     variant="ghost" size="icon"
-                    className="text-gold hover:bg-gold/10 mb-4"
-                    onClick={() => speakWord(activeEntry.word)}
+                    className="text-gold hover:bg-gold/10 mb-3"
+                    onClick={() => {
+                      const u = new SpeechSynthesisUtterance(active.data.word || "");
+                      u.lang = "ar-SA";
+                      speechSynthesis.speak(u);
+                    }}
                   >
                     <Volume2 className="h-5 w-5" />
                   </Button>
 
-                  <h3 className="font-display text-5xl md:text-6xl text-foreground mb-3">
-                    {activeEntry.word}
+                  {/* الكلمة */}
+                  <h3 className="font-display text-5xl md:text-6xl text-foreground mb-2">
+                    {active.data.word}
                   </h3>
 
-                  {/* مؤشر الثقة */}
-                  <div className="mb-4">
-                    <ConfidenceBadge level={activeEntry.confidence} />
+                  {/* ── الجمع ── */}
+                  {active.data.plural && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+                      className="mb-3"
+                    >
+                      <span className="text-xs font-ui text-muted-foreground/50 border border-gold/15 rounded-full px-3 py-1">
+                        الجمع:{" "}
+                        <span className="text-gold/80 font-display">{active.data.plural}</span>
+                      </span>
+                    </motion.div>
+                  )}
+
+                  {/* Badges */}
+                  <div className="flex gap-2 mb-4 flex-wrap justify-center">
+                    {active.data.confidence && <ConfidenceBadge level={active.data.confidence} />}
                   </div>
 
-                  <div className="w-16 h-px bg-gold/50 mb-4" />
+                  <div className="w-16 h-px bg-gold/40 mb-4" />
 
-                  {/* بيت الشعر */}
-                  {activeEntry.example_verse && (
-                    <blockquote className="font-display text-sm text-muted-foreground leading-loose whitespace-pre-wrap">
-                      {activeEntry.example_verse}
-                    </blockquote>
+                  {/* simple_tip */}
+                  {active.data.simple_tip && (
+                    <p className="font-body text-xs text-gold/70 leading-relaxed mb-4 italic">
+                      💡 {active.data.simple_tip}
+                    </p>
                   )}
 
-                  {/* زر "وضّح أكثر" */}
+                  {/* الأبيات */}
+                  <div className="w-full space-y-2">
+                    {active.data.example_verses?.map((v, i) => (
+                      <VerseCard key={i} verse={v} index={i} />
+                    ))}
+                  </div>
+
+                  {/* وضّح أكثر */}
                   <Button
                     variant="ghost" size="sm"
-                    className="mt-6 text-xs text-muted-foreground/50 hover:text-gold gap-1"
-                    onClick={() => handleSearch(true)}
-                    disabled={isLoading}
+                    className="mt-5 text-xs text-muted-foreground/50 hover:text-gold gap-1"
+                    onClick={() => handleSearch(true)} disabled={isLoading}
                   >
-                    <RefreshCw className="h-3 w-3" />
-                    وضّح أكثر
+                    <RefreshCw className="h-3 w-3" /> وضّح أكثر
                   </Button>
-
-                  {/* معجم سوار */}
-                  {activeEntry.siwar.found && (
-                    <div className="mt-4 text-[10px] text-muted-foreground/40 font-body border-t border-border/20 pt-3 w-full text-center">
-                      ✦ مصدر: معجم سوار
-                      {activeEntry.siwar.root && ` • جذر: ${activeEntry.siwar.root}`}
-                    </div>
-                  )}
                 </div>
 
-                {/* الصفحة اليسرى - الشرح */}
-                <div className="glass-card rounded-r-none md:rounded-l-2xl md:rounded-r-none p-8 md:p-12 space-y-6 bg-gradient-to-bl from-card to-secondary/20">
+                {/* ── الصفحة اليسرى ── */}
+                <div className="glass-card rounded-r-none md:rounded-l-2xl md:rounded-r-none p-8 space-y-5 bg-gradient-to-bl from-card to-secondary/20">
 
-                  {/* الملخص السريع */}
-                  {activeEntry.simple_tip && (
+                  {/* الشرح الرئيسي */}
+                  {active.data.primary_meaning && (
                     <div className="p-3 rounded-lg bg-gold/5 border border-gold/15">
-                      <p className="font-body text-sm text-gold/80 leading-relaxed">
-                        💡 {activeEntry.simple_tip}
+                      <p className="font-body text-sm text-foreground/90 leading-relaxed">
+                        {active.data.primary_meaning}
                       </p>
                     </div>
                   )}
 
-                  <div>
-                    <h4 className="font-ui text-xs text-gold mb-2 tracking-wider">المعنى</h4>
-                    <p className="font-body text-sm text-foreground/80 leading-relaxed">
-                      {activeEntry.meaning}
-                    </p>
-                  </div>
+                  {/* ── أبرز 3 معاني مع شارة سوار ── */}
+                  {active.data.meanings && active.data.meanings.length > 0 && (
+                    <div className="space-y-3">
+                      <h4 className="font-ui text-xs text-gold tracking-wider">أبرز المعاني</h4>
+                      {active.data.meanings.map((m: MeaningEntry, i: number) => (
+                        <MeaningCard key={i} meaning={m} index={i} />
+                      ))}
+                    </div>
+                  )}
 
-                  <div>
-                    <h4 className="font-ui text-xs text-gold mb-2 tracking-wider">الاستخدام الشعري</h4>
-                    <p className="font-body text-sm text-foreground/80 leading-relaxed">
-                      {activeEntry.poetic_usage}
-                    </p>
-                  </div>
+                  {/* الاستخدام الشعري */}
+                  {active.data.poetic_usage && (
+                    <div>
+                      <h4 className="font-ui text-xs text-gold mb-1 tracking-wider">الاستخدام الشعري</h4>
+                      <p className="font-body text-xs text-foreground/70 leading-relaxed">
+                        {active.data.poetic_usage}
+                      </p>
+                    </div>
+                  )}
 
-                  <div>
-                    <h4 className="font-ui text-xs text-gold mb-2 tracking-wider">الرمزية والإحساس</h4>
-                    <p className="font-body text-sm text-foreground/80 leading-relaxed">
-                      {activeEntry.symbolism}
-                    </p>
-                  </div>
+                  {/* الرمزية */}
+                  {active.data.symbolism && (
+                    <div>
+                      <h4 className="font-ui text-xs text-gold mb-1 tracking-wider">الرمزية والدلالة</h4>
+                      <p className="font-body text-xs text-foreground/70 leading-relaxed">
+                        {active.data.symbolism}
+                      </p>
+                    </div>
+                  )}
                 </div>
               </motion.div>
             ) : (
               /* ── Empty State ── */
               <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                 className="text-center py-20"
               >
                 <BookOpen className="h-20 w-20 text-gold/20 mx-auto mb-4" />
@@ -296,18 +338,18 @@ const TreasuresOfWords = () => {
                   اكتب كلمة لتفتح صفحات كنوزها
                 </p>
                 <p className="font-body text-xs text-muted-foreground/30">
-                  مثال: سَلَوتُ • مَثولَةَ • عُرّامَ • النوى • هِلالاً
+                  مثال: عنقاء • النوى • سَلَوتُ • مَثولَةَ
                 </p>
               </motion.div>
             )}
           </AnimatePresence>
 
-          {/* ── الكلمات السابقة ──────────────────────────────────── */}
+          {/* ── الكلمات السابقة ── */}
           {entries.length > 1 && (
             <div className="mt-8 flex flex-wrap gap-2 justify-center">
-              {entries.map((entry, i) => (
+              {entries.map((e, i) => (
                 <Button
-                  key={entry.id}
+                  key={e.id}
                   variant={i === activeIndex ? "default" : "outline"}
                   size="sm"
                   className={`font-display ${
@@ -317,7 +359,7 @@ const TreasuresOfWords = () => {
                   }`}
                   onClick={() => setActiveIndex(i)}
                 >
-                  {entry.word}
+                  {e.data.word}
                 </Button>
               ))}
             </div>
