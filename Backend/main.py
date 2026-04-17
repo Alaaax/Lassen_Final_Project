@@ -9,16 +9,27 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
+# imports المشتركة
 from schemas import (
     TreasuresRequest, TreasuresResponse, SiwarInfo,
     MeaningEntry, ExampleVerse,
     MoodRequest, MoodResponse, PoemEntry,
+    JourneyRequest, JourneyResponse, JourneyEraPoem, JourneySummary,
 )
-from services.siwar_service    import get_siwar_definition
-from services.ai_service       import explain_word, get_mood_response
-from services.verse_searcher   import search_verses_for_word
-from services.poetry_retriever import get_poems_for_mood, get_db_stats
 
+# دعم التشغيل من داخل Backend أو من جذر المشروع
+try:
+    from services.siwar_service import get_siwar_definition
+    from services.ai_service import explain_word, get_mood_response
+    from services.verse_searcher import search_verses_for_word
+    from services.poetry_retriever import get_poems_for_mood, get_db_stats
+    from services.journey_service import build_time_journey
+except ModuleNotFoundError:
+    from Backend.services.siwar_service import get_siwar_definition
+    from Backend.services.ai_service import explain_word, get_mood_response
+    from Backend.services.verse_searcher import search_verses_for_word
+    from Backend.services.poetry_retriever import get_poems_for_mood, get_db_stats
+    from Backend.services.journey_service import build_time_journey
 load_dotenv()
 
 app = FastAPI(title="بيت القصيد API", version="1.0.0")
@@ -196,10 +207,51 @@ async def mood_poems(req: MoodRequest):
 
 
 # =============================================================
+# 🔌 رحلة عبر الزمن — POST /api/journey/explore
+# =============================================================
+
+@app.post("/api/journey/explore", response_model=JourneyResponse)
+async def explore_time_journey(req: JourneyRequest):
+    try:
+        payload = await build_time_journey(req.theme)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"خطأ رحلة عبر الزمن: {str(e)}")
+
+    return JourneyResponse(
+        status=payload.get("status", "ok"),
+        selected_theme=payload.get("selected_theme", req.theme),
+        intro_line=payload.get("intro_line", ""),
+        eras=[
+            JourneyEraPoem(
+                era_key=era.get("era_key", ""),
+                era_label=era.get("era_label", ""),
+                poem_id=era.get("poem_id"),
+                poem_title=era.get("poem_title"),
+                poet_name=era.get("poet_name"),
+                poem_meter=era.get("poem_meter"),
+                poem_theme=era.get("poem_theme"),
+                verses=era.get("verses", []),
+                cinematic_note=era.get("cinematic_note", ""),
+                fallback_used=bool(era.get("fallback_used", False)),
+            )
+            for era in payload.get("eras", [])
+        ],
+        summary=JourneySummary(
+            similarities=payload.get("summary", {}).get("similarities", []),
+            core_difference=payload.get("summary", {}).get("core_difference", ""),
+            final_line=payload.get("summary", {}).get("final_line", ""),
+        ),
+        warnings=payload.get("warnings", []),
+    )
+
+# =============================================================
 # TODO: باقي الصفحات
 # =============================================================
 # @app.post("/api/write/generate")
-# @app.post("/api/journey/explore")
 # @app.post("/api/interpret/verses")
 
 

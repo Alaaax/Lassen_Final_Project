@@ -82,6 +82,40 @@ class MoodResponse(BaseModel):
     category_guess:     Optional[str]      = None
 
 
+# ── رحلة عبر الزمن ────────────────────────────────────────────
+
+class JourneyRequest(BaseModel):
+    theme: str = Field(..., min_length=1, max_length=60)
+
+
+class JourneyEraPoem(BaseModel):
+    era_key:        str
+    era_label:      str
+    poem_id:        Optional[str] = None
+    poem_title:     Optional[str] = None
+    poet_name:      Optional[str] = None
+    poem_meter:     Optional[str] = None
+    poem_theme:     Optional[str] = None
+    verses:         list[str] = []
+    cinematic_note: str
+    fallback_used:  bool = False
+
+
+class JourneySummary(BaseModel):
+    similarities:    list[str] = []
+    core_difference: str = ""
+    final_line:      str = ""
+
+
+class JourneyResponse(BaseModel):
+    status:         str = "ok"
+    selected_theme: str
+    intro_line:     str
+    eras:           list[JourneyEraPoem]
+    summary:        JourneySummary
+    warnings:       list[str] = []
+
+
 # ── TODO: باقي الصفحات ────────────────────────────────────────
 
 # # =============================================================

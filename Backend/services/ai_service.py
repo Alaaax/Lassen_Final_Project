@@ -26,6 +26,10 @@ from MoodOfTheDay_promts import (
     MOOD_TO_CATEGORY,
     AVAILABLE_CATEGORIES,
 )
+from JourneyThroughTime_prompts import (
+    JOURNEY_SUMMARY_SYSTEM_PROMPT,
+    JOURNEY_SUMMARY_USER_PROMPT,
+)
 
 load_dotenv()
 
@@ -241,6 +245,46 @@ async def get_time_journey(topic: str) -> dict:
 
 async def interpret_verses(verses: str) -> dict:
     raise NotImplementedError
+
+
+async def summarize_journey(theme: str, eras_payload: list[dict]) -> dict:
+    """
+    يلخص التشابه والاختلاف الجوهري بين التعبير الشعري عبر العصور.
+    """
+    user_msg = JOURNEY_SUMMARY_USER_PROMPT.format(
+        theme=theme,
+        eras_block=json.dumps(eras_payload, ensure_ascii=False, indent=2),
+    )
+
+    response = await get_client().chat.completions.create(
+        model=GPT_MODEL,
+        messages=[
+            {"role": "system", "content": JOURNEY_SUMMARY_SYSTEM_PROMPT},
+            {"role": "user", "content": user_msg},
+        ],
+        max_tokens=500,
+        temperature=0.4,
+        timeout=30,
+        response_format={"type": "json_object"},
+    )
+
+    raw = (response.choices[0].message.content or "").strip()
+    try:
+        result = json.loads(raw)
+    except json.JSONDecodeError:
+        result = {
+            "similarities": [],
+            "core_difference": "تعذّر بناء مقارنة دقيقة حالياً.",
+            "final_line": "هذه نهاية الرحلة عبر الزمن.",
+        }
+
+    # حماية بسيطة للقيم
+    if not isinstance(result.get("similarities"), list):
+        result["similarities"] = []
+    result["core_difference"] = str(result.get("core_difference", "")).strip()
+    result["final_line"] = str(result.get("final_line", "")).strip() or "هذه نهاية الرحلة عبر الزمن."
+
+    return result
 
 
 

@@ -1,89 +1,68 @@
 /**
  * صفحة رحلة عبر الزمن - Journey Through Time
- * عرض تطور التعبير الشعري عبر العصور
- *
- * === نقطة ربط نموذج الذكاء الاصطناعي لرحلة عبر الزمن ===
- * استبدل الدالة getJourneyData بربط النموذج الخاص بك
+ * رحلة تفاعلية: بداية -> الجاهلي -> العباسي -> الحديث -> خلاصة نهائية
  */
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Clock, Loader2, Sparkles } from "lucide-react";
+import { ArrowLeft, ArrowRight, Clock, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import PageLayout from "@/components/PageLayout";
 import ArabicLettersBg from "@/components/ArabicLettersBg";
 import OrnamentalDivider from "@/components/OrnamentalDivider";
 import { useHistory } from "@/contexts/HistoryContext";
+import { APIError, getTimeJourney, type JourneyResponse } from "@/services/api";
+import { useToast } from "@/hooks/use-toast";
 
-interface EraEntry {
-  era: string;
-  period: string;
-  poet: string;
-  verse: string;
-  explanation: string;
-}
+const themes = ["غزل", "مدح", "ذم", "هجاء", "حزن"] as const;
 
-const themes = ["الحزن", "الحب", "الشوق", "الحكمة", "الوفاء", "الفخر", "الأمل", "الفراق"];
-
-/**
- * === نقطة ربط نموذج الذكاء الاصطناعي ===
- */
-async function getJourneyData(theme: string): Promise<EraEntry[]> {
-  // TODO: استبدل بربط نموذج AI لرحلة عبر الزمن
-  await new Promise((r) => setTimeout(r, 2000));
-  return [
-    {
-      era: "الجاهلي",
-      period: "قبل الإسلام",
-      poet: "امرؤ القيس",
-      verse: "قِفا نَبكِ مِن ذِكرى حَبيبٍ وَمَنزِلِ",
-      explanation: `التعبير عن ${theme} في العصر الجاهلي كان مباشراً وقوياً، مرتبطاً بالطبيعة والصحراء`,
-    },
-    {
-      era: "العباسي",
-      period: "750-1258م",
-      poet: "أبو تمام",
-      verse: "نَقِّل فُؤادَكَ حَيثُ شِئتَ مِنَ الهَوى",
-      explanation: `في العصر العباسي أصبح التعبير عن ${theme} أكثر تعقيداً وفلسفةً`,
-    },
-    {
-      era: "الأندلسي",
-      period: "711-1492م",
-      poet: "ابن زيدون",
-      verse: "أَضحى التَنائي بَديلاً مِن تَدانينا",
-      explanation: `تأثر شعراء الأندلس بالطبيعة الخضراء، فجاء تعبيرهم عن ${theme} رقيقاً وعذباً`,
-    },
-    {
-      era: "الحديث",
-      period: "القرن 20-21",
-      poet: "نزار قباني",
-      verse: "علّمني حبّكِ أن أحزنَ وأنا محتاجٌ منذ عصور لامرأةٍ تجعلني أحزن",
-      explanation: `في العصر الحديث أصبح التعبير عن ${theme} شخصياً وجريئاً ومتحرراً من القيود التقليدية`,
-    },
-  ];
-}
-
-const eraColors = ["bg-amber-500/20", "bg-emerald-500/20", "bg-blue-500/20", "bg-rose-500/20"];
+const eraColors = ["bg-amber-500/20", "bg-emerald-500/20", "bg-rose-500/20"];
 
 const JourneyThroughTime = () => {
   const [selectedTheme, setSelectedTheme] = useState("");
-  const [entries, setEntries] = useState<EraEntry[]>([]);
+  const [journeyData, setJourneyData] = useState<JourneyResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [currentStep, setCurrentStep] = useState(0);
   const { addHistoryItem } = useHistory();
+  const { toast } = useToast();
+
+  const maxStep = useMemo(() => {
+    if (!journeyData) return 0;
+    return journeyData.eras.length + 1; // 0 بداية، 1..n عصور، n+1 خلاصة
+  }, [journeyData]);
 
   const handleExplore = async (theme: string) => {
     setSelectedTheme(theme);
     setIsLoading(true);
-    setEntries([]);
+    setJourneyData(null);
+    setCurrentStep(0);
     addHistoryItem("journey", "رحلة عبر الزمن", theme);
     try {
-      const data = await getJourneyData(theme);
-      setEntries(data);
-    } catch {
-      /* handle error */
+      const data = await getTimeJourney(theme);
+      setJourneyData(data);
+      setCurrentStep(0);
+    } catch (error) {
+      const message =
+        error instanceof APIError
+          ? error.message
+          : "تعذر بدء الرحلة الآن. حاول مرة أخرى.";
+      toast({
+        title: "تعذر تحميل الرحلة",
+        description: message,
+        variant: "destructive",
+      });
     } finally {
       setIsLoading(false);
     }
   };
+
+  const nextStep = () => setCurrentStep((prev) => Math.min(prev + 1, maxStep));
+  const prevStep = () => setCurrentStep((prev) => Math.max(prev - 1, 0));
+
+  const isIntroStep = currentStep === 0;
+  const isSummaryStep = journeyData ? currentStep === journeyData.eras.length + 1 : false;
+  const currentEra = journeyData && !isIntroStep && !isSummaryStep
+    ? journeyData.eras[currentStep - 1]
+    : null;
 
   return (
     <PageLayout title="رحلة عبر الزمن">
@@ -93,7 +72,7 @@ const JourneyThroughTime = () => {
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-10">
             <Clock className="h-10 w-10 text-gold mx-auto mb-4" />
             <h2 className="font-display text-3xl text-foreground mb-2">رحلة عبر الزمن</h2>
-            <p className="font-body text-muted-foreground">اختر شعوراً وشاهد كيف عبّر عنه الشعراء عبر العصور</p>
+            <p className="font-body text-muted-foreground">اختر موضوعاً وشاهد كيف عبّر عنه الشعراء عبر العصور</p>
           </motion.div>
 
           {/* اختيار الموضوع */}
@@ -122,56 +101,137 @@ const JourneyThroughTime = () => {
             </div>
           )}
 
-          {/* الخط الزمني */}
+          {/* الرحلة التفاعلية */}
           <AnimatePresence>
-            {entries.length > 0 && !isLoading && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            {journeyData && !isLoading && (
+              <motion.div
+                key={`${selectedTheme}-${currentStep}`}
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+              >
                 <OrnamentalDivider />
-                <div className="relative">
-                  {/* الخط الرأسي */}
-                  <div className="absolute right-1/2 top-0 bottom-0 w-px bg-gradient-to-b from-gold/50 via-gold/20 to-transparent" />
 
-                  {entries.map((entry, i) => (
-                    <motion.div
-                      key={entry.era}
-                      initial={{ opacity: 0, x: i % 2 === 0 ? 50 : -50 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: i * 0.2, duration: 0.5 }}
-                      className={`flex items-start gap-8 mb-12 ${i % 2 === 0 ? "flex-row" : "flex-row-reverse"}`}
-                    >
-                      {/* البطاقة */}
-                      <div className={`flex-1 glass-card p-6 ${eraColors[i % eraColors.length]}`}>
-                        <div className="flex items-center gap-2 mb-3">
-                          <span className="font-display text-xl text-foreground">{entry.era}</span>
-                          <span className="text-xs font-ui text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
-                            {entry.period}
-                          </span>
-                        </div>
-                        <blockquote className="font-display text-lg text-foreground/90 border-r-2 border-gold/50 pr-4 mb-3 leading-loose">
-                          {entry.verse}
-                        </blockquote>
-                        <p className="font-ui text-xs text-muted-foreground mb-2">— {entry.poet}</p>
-                        <p className="font-body text-sm text-muted-foreground leading-relaxed">{entry.explanation}</p>
-                      </div>
-
-                      {/* النقطة الزمنية */}
-                      <div className="flex flex-col items-center shrink-0 pt-6">
-                        <div className="w-4 h-4 rounded-full bg-gold border-4 border-background shadow-lg" />
-                      </div>
-
-                      <div className="flex-1" />
-                    </motion.div>
+                {/* شريط التقدم */}
+                <div className="flex items-center justify-center gap-2 mb-6">
+                  {Array.from({ length: maxStep + 1 }).map((_, idx) => (
+                    <span
+                      key={idx}
+                      className={`h-1.5 w-10 rounded-full transition-colors ${
+                        idx <= currentStep ? "bg-gold" : "bg-gold/20"
+                      }`}
+                    />
                   ))}
+                </div>
+
+                {/* شاشة البداية */}
+                {isIntroStep && (
+                  <div className="glass-card p-8 text-center bg-card/85">
+                    <p className="font-display text-2xl text-foreground mb-3"> بداية الرحلة</p>
+                    <p className="font-body text-muted-foreground leading-loose">
+                      {journeyData.intro_line}
+                    </p>
+                    <p className="font-ui text-xs text-muted-foreground/80 mt-3">
+                      اضغط السهم للانتقال إلى أول عصر.
+                    </p>
+                  </div>
+                )}
+
+                {/* شاشة العصر الحالي */}
+                {currentEra && (
+                  <div className={`glass-card p-6 ${eraColors[(currentStep - 1) % eraColors.length]}`}>
+                    <div className="flex flex-wrap items-center gap-2 mb-3">
+                      <span className="font-display text-2xl text-foreground">{currentEra.era_label}</span>
+                    </div>
+
+                    <p className="font-ui text-xs text-muted-foreground mb-4">
+                      {currentEra.poet_name || "غير معروف"}
+                    </p>
+
+                    <div className="space-y-2">
+                      {currentEra.verses.map((verse, idx) => (
+                        <blockquote
+                          key={`${currentEra.era_key}-${idx}`}
+                          className="font-display text-lg text-foreground/90 border-r-2 border-gold/40 pr-3 leading-loose"
+                        >
+                          {verse}
+                        </blockquote>
+                      ))}
+                    </div>
+
+                    {currentEra.fallback_used && (
+                      <p className="font-ui text-xs text-amber-700 mt-4">
+                        ملاحظة: لم تتوفر قصيدة مصنفة مباشرة بنفس الموضوع في هذا العصر، فتم اختيار قصيدة من نفس العصر.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* شاشة النهاية */}
+                {isSummaryStep && (
+                  <div className="glass-card p-8 bg-card/90">
+                    <p className="font-display text-2xl text-foreground mb-4 text-center">
+                      نهاية الرحلة عبر الزمن
+                    </p>
+                    <div className="mb-5">
+                      <p className="font-ui text-sm text-muted-foreground mb-2">أوجه التشابه:</p>
+                      <ul className="list-disc list-inside space-y-1 font-body text-foreground/90">
+                        {journeyData.summary.similarities.map((item, idx) => (
+                          <li key={idx}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="mb-5">
+                      <p className="font-ui text-sm text-muted-foreground mb-2">الاختلاف الجوهري:</p>
+                      <p className="font-body text-foreground/90 leading-loose">
+                        {journeyData.summary.core_difference}
+                      </p>
+                    </div>
+                    <p className="font-display text-lg text-gold-dark text-center">
+                      {journeyData.summary.final_line}
+                    </p>
+
+                    {journeyData.warnings.length > 0 && (
+                      <div className="mt-6 p-3 rounded-lg bg-gold/10 border border-gold/25">
+                        <p className="font-ui text-xs text-muted-foreground mb-1">ملاحظات البيانات:</p>
+                        <ul className="list-disc list-inside space-y-1 font-ui text-xs text-muted-foreground">
+                          {journeyData.warnings.map((w, idx) => (
+                            <li key={idx}>{w}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* أزرار التنقل */}
+                <div className="flex items-center justify-center gap-3 mt-8">
+                  <Button
+                    variant="outline"
+                    className="border-gold/30 hover:bg-gold/10"
+                    onClick={prevStep}
+                    disabled={currentStep === 0}
+                  >
+                    <ArrowRight className="h-4 w-4 ml-1" />
+                    السابق
+                  </Button>
+                  <Button
+                    className="bg-primary text-primary-foreground hover:bg-primary/90"
+                    onClick={nextStep}
+                    disabled={currentStep >= maxStep}
+                  >
+                    التالي
+                    <ArrowLeft className="h-4 w-4 mr-1" />
+                  </Button>
                 </div>
               </motion.div>
             )}
           </AnimatePresence>
 
           {/* الحالة الفارغة */}
-          {!selectedTheme && !isLoading && entries.length === 0 && (
+          {!selectedTheme && !isLoading && !journeyData && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center py-20">
               <Sparkles className="h-16 w-16 text-gold/30 mx-auto mb-4" />
-              <p className="font-body text-muted-foreground/50">اختر شعوراً لتبدأ الرحلة</p>
+              <p className="font-body text-muted-foreground/50">اختر موضوعاً لتبدأ الرحلة</p>
             </motion.div>
           )}
         </div>
