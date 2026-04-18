@@ -84,44 +84,6 @@ const fadeUp = {
   }),
 };
 
-// ── Roadmap دائري للميزات الخمس ──────────────────────────────
-const RoadmapFeatures = ({ onSelect }: { onSelect: (url: string) => void }) => {
-  return (
-    <div className="relative w-full max-w-3xl mx-auto aspect-square max-h-[640px] my-8">
-      {/* خطوط زخرفية تربط المركز بالبطاقات */}
-      <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100">
-        {features.map((_, i) => {
-          const angle = (i / features.length) * Math.PI * 2 - Math.PI / 2;
-          const x = 50 + Math.cos(angle) * 38;
-          const y = 50 + Math.sin(angle) * 38;
-          return (
-            <line
-              key={i}
-              x1="50" y1="50" x2={x} y2={y}
-              stroke="hsl(var(--brown-400))"
-              strokeWidth="0.25"
-              strokeDasharray="0.8 0.8"
-              opacity="0.4"
-            />
-          );
-        })}
-        <circle cx="50" cy="50" r="38" fill="none" stroke="hsl(var(--brown-300))" strokeWidth="0.2" strokeDasharray="0.5 1" opacity="0.3" />
-      </svg>
-
-      {/* المركز: لَسِنْ */}
-      <motion.div
-        initial={{ opacity: 0, scale: 0.5 }}
-        whileInView={{ opacity: 1, scale: 1 }}
-        viewport={{ once: true }}
-        transition={{ duration: 0.6 }}
-        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10"
-      >
-        <div className="w-32 h-32 sm:w-40 sm:h-40 rounded-full bg-brown-gradient flex flex-col items-center justify-center shadow-[var(--shadow-warm)] border-2 border-gold/30">
-          <span className="font-display text-3xl sm:text-4xl text-primary-foreground">لَسِنْ</span>
-          <span className="font-kufi text-[10px] sm:text-xs text-primary-foreground/70 mt-1">رحلة الشعر</span>
-        </div>
-      </motion.div>
-
 // ── Roadmap دائري متوازن للميزات الخمس ──────────────────────
 const RoadmapFeatures = ({ onSelect }: { onSelect: (url: string) => void }) => {
   const RADIUS = 38; // نسبة من حجم الحاوية
