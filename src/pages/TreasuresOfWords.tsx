@@ -119,10 +119,10 @@ const TreasuresOfWords = () => {
             initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
             className="text-center mb-10"
           >
-            <BookOpen className="h-10 w-10 text-gold mx-auto mb-4" />
-            <h2 className="font-display text-3xl text-foreground mb-2">كنوز الكلمات</h2>
-            <p className="font-body text-muted-foreground">
-              اكتب أي كلمة عربية صعبة واحصل على شرحها الشعري
+            <BookOpen className="h-10 w-10 text-brown-600 mx-auto mb-4" />
+            <h2 className="font-display text-3xl text-gradient-brown mb-2">كنوز الكلمات</h2>
+            <p className="font-kufi text-brown-600">
+              اكتب كلمة لاكتشاف كنوزها ومعانيها
             </p>
           </motion.div>
 
@@ -152,30 +152,7 @@ const TreasuresOfWords = () => {
               </Button>
             </div>
 
-            <button
-              onClick={() => setShowVerse(v => !v)}
-              className="mt-2 text-xs text-muted-foreground/50 hover:text-gold transition-colors flex items-center gap-1 mx-auto"
-            >
-              <Info className="h-3 w-3" />
-              {showVerse ? "إخفاء" : "أضف البيت الشعري للسياق (اختياري)"}
-            </button>
-
-            <AnimatePresence>
-              {showVerse && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}
-                  exit={{ opacity: 0, height: 0 }} className="overflow-hidden"
-                >
-                  <Input
-                    value={verse} onChange={e => setVerse(e.target.value)}
-                    placeholder="البيت الشعري الذي وردت فيه الكلمة..."
-                    className="mt-2 font-display text-sm border-gold/20 bg-transparent"
-                    disabled={isLoading}
-                  />
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
+            {/* (تمت إزالة قسم البيت الاختياري بناءً على طلب التصميم) */}
 
           {/* ── رسالة الخطأ ── */}
           <AnimatePresence>
