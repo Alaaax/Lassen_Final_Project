@@ -347,6 +347,11 @@ const TreasuresOfWords = () => {
             </div>
           )}
 
+          {/* زر العودة للصفحة الرئيسية */}
+          <div className="mt-12 flex justify-center">
+            <PageNavButton to="/" label="العودة إلى الصفحة الرئيسية" variant="home" />
+          </div>
+
         </div>
       </div>
     </PageLayout>
