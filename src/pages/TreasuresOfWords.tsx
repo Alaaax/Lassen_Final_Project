@@ -224,12 +224,7 @@ const TreasuresOfWords = () => {
                     </p>
                   )}
 
-                  {/* الأبيات */}
-                  <div className="w-full space-y-2">
-                    {active.data.example_verses?.map((v, i) => (
-                      <VerseCard key={i} verse={v} index={i} />
-                    ))}
-                  </div>
+                  {/* (تمت إزالة قسم الأبيات الشعرية الأمثلة من هذه البطاقة) */}
 
                   {/* وضّح أكثر */}
                   <Button
@@ -290,9 +285,9 @@ const TreasuresOfWords = () => {
                 initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                 className="text-center py-20"
               >
-                <BookOpen className="h-20 w-20 text-gold/20 mx-auto mb-4" />
-                <p className="font-body text-muted-foreground/50 mb-2">
-                  اكتب كلمة لتفتح صفحات كنوزها
+                <BookOpen className="h-20 w-20 text-brown-300 mx-auto mb-4" />
+                <p className="font-body text-brown-600/70 mb-2">
+                  اكتب كلمة لاكتشاف كنوزها ومعانيها
                 </p>
                 <p className="font-body text-xs text-muted-foreground/30">
                   مثال: عنقاء • النوى • سَلَوتُ • مَثولَةَ
