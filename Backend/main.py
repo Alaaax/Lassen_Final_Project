@@ -15,21 +15,35 @@ from schemas import (
     MeaningEntry, ExampleVerse,
     MoodRequest, MoodResponse, PoemEntry,
     JourneyRequest, JourneyResponse, JourneyEraPoem, JourneySummary,
+    InterpretRequest, InterpretResponse,
 )
 
-# دعم التشغيل من داخل Backend أو من جذر المشروع
+# دعم التشغيل لثلاث هيكليات:
+# 1) Backend/services/*
+# 2) Backend/services/* مع تشغيل من جذر المشروع
+# 3) ملفات مسطحة في نفس المجلد (بيئة التطوير السريعة)
 try:
     from services.siwar_service import get_siwar_definition
     from services.ai_service import explain_word, get_mood_response
     from services.verse_searcher import search_verses_for_word
     from services.poetry_retriever import get_poems_for_mood, get_db_stats
     from services.journey_service import build_time_journey
+    from services.fasserha_service import fasserha_api_response
 except ModuleNotFoundError:
-    from Backend.services.siwar_service import get_siwar_definition
-    from Backend.services.ai_service import explain_word, get_mood_response
-    from Backend.services.verse_searcher import search_verses_for_word
-    from Backend.services.poetry_retriever import get_poems_for_mood, get_db_stats
-    from Backend.services.journey_service import build_time_journey
+    try:
+        from Backend.services.siwar_service import get_siwar_definition
+        from Backend.services.ai_service import explain_word, get_mood_response
+        from Backend.services.verse_searcher import search_verses_for_word
+        from Backend.services.poetry_retriever import get_poems_for_mood, get_db_stats
+        from Backend.services.journey_service import build_time_journey
+        from Backend.services.fasserha_service import fasserha_api_response
+    except ModuleNotFoundError:
+        from siwar_service import get_siwar_definition
+        from ai_service import explain_word, get_mood_response
+        from verse_searcher import search_verses_for_word
+        from poetry_retriever import get_poems_for_mood, get_db_stats
+        from journey_service import build_time_journey
+        from fasserha_service import fasserha_api_response
 load_dotenv()
 
 app = FastAPI(title="بيت القصيد API", version="1.0.0")
@@ -249,10 +263,53 @@ async def explore_time_journey(req: JourneyRequest):
     )
 
 # =============================================================
+# 🔌 فسّرها لي — POST /api/interpret/verses
+# =============================================================
+
+@app.post("/api/interpret/verses", response_model=InterpretResponse)
+async def interpret_verses_api(req: InterpretRequest):
+    try:
+        payload = await asyncio.to_thread(fasserha_api_response, req.poem)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"خطأ تفسير الأبيات: {str(e)}")
+
+    if not payload.get("success"):
+        raise HTTPException(status_code=500, detail=payload.get("message", "تعذّر التفسير"))
+
+    data = payload.get("data", {})
+    meter_data = data.get("meter", {})
+    era_data = data.get("era", {})
+    topic_data = data.get("topic", {})
+    return InterpretResponse(
+        success=True,
+        data={
+            "meter": {
+                "arabic": meter_data.get("arabic", "غير محدد"),
+                "english": meter_data.get("english", "unknown"),
+                "confidence": float(meter_data.get("confidence", 0.0)),
+            },
+            "era": {
+                "label": era_data.get("label", "غير محدد"),
+                "classical_prob": float(era_data.get("classical_prob", 0.0)),
+                "modern_prob": float(era_data.get("modern_prob", 0.0)),
+            },
+            "topic": {
+                "label": topic_data.get("label", "غير محدد"),
+                "confidence": float(topic_data.get("confidence", 0.0)),
+                "top3": topic_data.get("top3", []),
+            },
+            "explanation": data.get("explanation", ""),
+        },
+    )
+
+# =============================================================
 # TODO: باقي الصفحات
 # =============================================================
 # @app.post("/api/write/generate")
-# @app.post("/api/interpret/verses")
 
 
 

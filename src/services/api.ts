@@ -109,11 +109,50 @@ export interface JourneyResponse {
 export const getTimeJourney = (theme: string) =>
   post<JourneyResponse>("/api/journey/explore", { theme });
 
+// ── فسرها لي ───────────────────────────────────────────────────
+
+export interface InterpretMeter {
+  arabic: string;
+  english: string;
+  confidence: number;
+}
+
+export interface InterpretEra {
+  label: string;
+  classical_prob: number;
+  modern_prob: number;
+}
+
+export interface InterpretTopicTopItem {
+  label: string;
+  prob: number;
+}
+
+export interface InterpretTopic {
+  label: string;
+  confidence: number;
+  top3: InterpretTopicTopItem[];
+}
+
+export interface InterpretData {
+  meter: InterpretMeter;
+  era: InterpretEra;
+  topic: InterpretTopic;
+  explanation: string;
+}
+
+export interface InterpretResponse {
+  success: boolean;
+  data: InterpretData;
+}
+
+export const interpretVerses = (poem: string) =>
+  post<InterpretResponse>("/api/interpret/verses", { poem });
+
 
 
 // TODO:
 // export const generateVerse   = (idea: string)   => post("/api/write/generate",   { idea });
-// export const interpretVerses = (verses: string) => post("/api/interpret/verses", { verses });
 
 
 

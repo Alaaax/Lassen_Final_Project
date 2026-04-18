@@ -116,6 +116,48 @@ class JourneyResponse(BaseModel):
     warnings:       list[str] = []
 
 
+# ── فسرها لي (تفسير الأبيات) ──────────────────────────────────
+
+class InterpretRequest(BaseModel):
+    poem: str = Field(..., min_length=2, max_length=5000)
+
+
+class MeterInfo(BaseModel):
+    arabic: str
+    english: str
+    confidence: float
+
+
+class EraInfo(BaseModel):
+    label: str
+    classical_prob: float
+    modern_prob: float
+
+
+class TopicRank(BaseModel):
+    label: str
+    prob: float
+
+
+class TopicInfo(BaseModel):
+    label: str
+    confidence: float
+    top3: list[TopicRank] = []
+
+
+class InterpretData(BaseModel):
+    meter: MeterInfo
+    era: EraInfo
+    topic: TopicInfo
+    explanation: str
+
+
+class InterpretResponse(BaseModel):
+    success: bool
+    data: Optional[InterpretData] = None
+    message: Optional[str] = None
+
+
 # ── TODO: باقي الصفحات ────────────────────────────────────────
 
 # # =============================================================

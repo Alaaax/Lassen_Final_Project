@@ -3,7 +3,7 @@
  * — العنوان: "فسر الأبيات الشعرية"
  * — auto-scroll للنتائج عند الضغط
  * — تصميم موحّد بألوان بنية (مركز + بطاقات متفرعة)
- * — زر العودة للرئيسية في الأسفل
+ * — زر العودة للرئيسية في الأسفلرحو
  *
  * نقطة ربط نموذج AI: الدالة interpretVerse
  */
@@ -17,6 +17,8 @@ import ArabicLettersBg from "@/components/ArabicLettersBg";
 import OrnamentalDivider from "@/components/OrnamentalDivider";
 import PageNavButton from "@/components/PageNavButton";
 import { useHistory } from "@/contexts/HistoryContext";
+import { useToast } from "@/hooks/use-toast";
+import { APIError, interpretVerses } from "@/services/api";
 
 interface InterpretationResult {
   mainInterpretation: string;
@@ -33,15 +35,14 @@ interface InterpretationEntry {
   result: InterpretationResult;
 }
 
-async function interpretVerse(_verse: string): Promise<InterpretationResult> {
-  await new Promise((r) => setTimeout(r, 1800));
+async function interpretVerse(verse: string): Promise<InterpretationResult> {
+  const response = await interpretVerses(verse);
   return {
-    mainInterpretation:
-      "يقول الشاعر في هذا البيت إن الإنسان لازم يسعى ويتعب عشان يوصل لأهدافه، ما يكفي إنه يتمنى بس. الدنيا ما تعطيك اللي تبيه بسهولة — لازم تقاتل وتجتهد. وهذا المعنى عميق لأنه يعلّمنا إن النجاح يحتاج عمل مو كلام.",
-    meter: "بحر الوافر",
-    tone: "حكمة وتحفيز",
-    era: "العصر العباسي (القرن 9م)",
-    poet: "المتنبي",
+    mainInterpretation: response.data.explanation,
+    meter: response.data.meter.arabic,
+    tone: response.data.topic.label,
+    era: response.data.era.label,
+    poet: "—",
   };
 }
 
@@ -63,6 +64,7 @@ const PoetryInterpretation = () => {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const { addHistoryItem } = useHistory();
+  const { toast } = useToast();
   const resultsRef = useRef<HTMLDivElement>(null);
 
   const active = entries.find(e => e.id === activeId) ?? null;
@@ -88,6 +90,16 @@ const PoetryInterpretation = () => {
       setEntries(prev => [entry, ...prev]);
       setActiveId(entry.id);
       setInput("");
+    } catch (error) {
+      const message =
+        error instanceof APIError
+          ? error.message
+          : "تعذّر تحليل الأبيات حالياً. حاول مرة أخرى.";
+      toast({
+        title: "تعذّر التفسير",
+        description: message,
+        variant: "destructive",
+      });
     } finally {
       setIsLoading(false);
     }
