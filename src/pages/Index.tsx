@@ -22,40 +22,58 @@ const features = [
 // حروف "شعر" متطايرة في الـ Hero
 const POETRY_LETTERS = ["ش", "ع", "ر"];
 
-const HeroFloatingLetters = () => (
-  <div className="absolute inset-0 overflow-hidden pointer-events-none">
-    {Array.from({ length: 14 }).map((_, i) => {
-      const letter = POETRY_LETTERS[i % POETRY_LETTERS.length];
-      const size = 60 + Math.random() * 90;
-      return (
+// حروف "شعر" متطايرة — ممتدة لكامل الصفحة (fixed) بشفافية أعلى وتباعد أكبر
+const HeroFloatingLetters = () => {
+  // مواقع موزّعة على شبكة لتجنّب التداخل
+  const items = Array.from({ length: 22 }).map((_, i) => {
+    const letter = POETRY_LETTERS[i % POETRY_LETTERS.length];
+    const cols = 5;
+    const rows = 5;
+    const col = i % cols;
+    const row = Math.floor(i / cols) % rows;
+    const jitterX = (Math.random() - 0.5) * 10;
+    const jitterY = (Math.random() - 0.5) * 10;
+    return {
+      letter,
+      size: 26 + Math.random() * 22, // أصغر بكثير
+      left: (col / (cols - 1)) * 100 + jitterX,
+      top: (row / (rows - 1)) * 100 + jitterY,
+      duration: 12 + Math.random() * 10,
+      delay: Math.random() * 5,
+    };
+  });
+
+  return (
+    <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
+      {items.map((it, i) => (
         <motion.span
           key={i}
           className="absolute font-display text-gradient-gold select-none"
           style={{
-            fontSize: `${size}px`,
-            left: `${Math.random() * 100}%`,
-            top: `${Math.random() * 100}%`,
-            opacity: 0.18,
+            fontSize: `${it.size}px`,
+            left: `${it.left}%`,
+            top: `${it.top}%`,
+            opacity: 0.09,
           }}
           animate={{
-            y: [0, -25, 0],
-            x: [0, 10, -5, 0],
-            rotate: [0, 5, -5, 0],
-            opacity: [0.12, 0.28, 0.12],
+            y: [0, -18, 0],
+            x: [0, 6, -4, 0],
+            rotate: [0, 3, -3, 0],
+            opacity: [0.06, 0.14, 0.06],
           }}
           transition={{
-            duration: 10 + Math.random() * 8,
+            duration: it.duration,
             repeat: Infinity,
-            delay: Math.random() * 4,
+            delay: it.delay,
             ease: "easeInOut",
           }}
         >
-          {letter}
+          {it.letter}
         </motion.span>
-      );
-    })}
-  </div>
-);
+      ))}
+    </div>
+  );
+};
 
 const fadeUp = {
   hidden: { opacity: 0, y: 30 },
