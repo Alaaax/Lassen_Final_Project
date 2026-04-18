@@ -33,10 +33,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 const navItems = [
   { title: "الرئيسية", url: "/", icon: Home },
   { title: "مزاج اليوم", url: "/mood", icon: Heart },
-  { title: "ساعدني أكتب", url: "/write", icon: PenLine },
   { title: "رحلة عبر الزمن", url: "/journey", icon: Clock },
-  { title: "كنوز الكلمات", url: "/treasures", icon: BookOpen },
   { title: "تفسير الأبيات", url: "/interpret", icon: MessageSquareText },
+  { title: "ساعدني أكتب", url: "/write", icon: PenLine },
+  { title: "كنوز الكلمات", url: "/treasures", icon: BookOpen },
 ];
 
 const pageNameMap: Record<string, string> = {
@@ -62,8 +62,8 @@ export function AppSidebar() {
       <SidebarContent className="scrollbar-thin">
         {/* قسم التنقل */}
         <SidebarGroup>
-          <SidebarGroupLabel className="font-ui text-sidebar-primary">
-            {!collapsed && "التنقل"}
+          <SidebarGroupLabel className="font-display text-sidebar-primary text-base tracking-wide">
+            {!collapsed && "لَــسِــنْ"}
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
