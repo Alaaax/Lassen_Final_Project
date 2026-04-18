@@ -160,7 +160,7 @@ const JourneyThroughTime = () => {
                     </div>
 
                     {currentEra.fallback_used && (
-                      <p className="font-ui text-xs text-amber-700 mt-4">
+                      <p className="font-ui text-xs text-muted-foreground mt-4">
                         ملاحظة: لم تتوفر قصيدة مصنفة مباشرة بنفس الموضوع في هذا العصر، فتم اختيار قصيدة من نفس العصر.
                       </p>
                     )}
@@ -235,6 +235,11 @@ const JourneyThroughTime = () => {
               <p className="font-body text-muted-foreground/50">اختر موضوعاً لتبدأ الرحلة</p>
             </motion.div>
           )}
+
+          {/* زر التنقل للصفحة التالية */}
+          <div className="mt-12 flex justify-center">
+            <PageNavButton to="/interpret" label="التالي: تفسير الأبيات" />
+          </div>
         </div>
       </div>
     </PageLayout>
