@@ -34,6 +34,25 @@ const ConfidenceBadge = ({ level }: { level: string }) => {
 
 // (تمت إزالة بطاقة البيت الشعري بناءً على طلب التصميم الجديد)
 
+// ── بطاقة بيت شعري مثال ──────────────────────────────────────
+const ExampleVerseCard = ({ verse }: { verse: { verse: string; poet: string; source: "database" | "gpt" } }) => (
+  <div className="p-3 rounded-lg bg-brown-50/40 border border-brown-200/40 space-y-1.5">
+    <p className="font-amiri text-sm text-brown-700 leading-loose text-center">
+      {verse.verse}
+    </p>
+    <div className="flex items-center justify-between gap-2">
+      {verse.poet && verse.poet !== "مجهول" && (
+        <p className="font-ui text-[10px] text-brown-500/70">— {verse.poet}</p>
+      )}
+      {verse.source === "database" && (
+        <span className="text-[9px] text-emerald-500/80 border border-emerald-400/20 rounded-full px-1.5 py-0.5 font-ui">
+          من قاعدة البيانات
+        </span>
+      )}
+    </div>
+  </div>
+);
+
 // ── بطاقة معنى واحد ───────────────────────────────────────────
 const MeaningCard = ({ meaning, index }: { meaning: MeaningEntry; index: number }) => (
   <div className="space-y-0.5">
