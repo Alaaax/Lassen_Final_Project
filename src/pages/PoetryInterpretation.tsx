@@ -26,6 +26,13 @@ interface InterpretationResult {
   poet: string;
 }
 
+interface InterpretationEntry {
+  id: string;
+  title: string;
+  verse: string;
+  result: InterpretationResult;
+}
+
 async function interpretVerse(_verse: string): Promise<InterpretationResult> {
   await new Promise((r) => setTimeout(r, 1800));
   return {
@@ -38,6 +45,11 @@ async function interpretVerse(_verse: string): Promise<InterpretationResult> {
   };
 }
 
+const summarize = (text: string, max = 28) => {
+  const t = text.trim().replace(/\s+/g, " ");
+  return t.length > max ? t.slice(0, max) + "…" : t;
+};
+
 const branchCards = [
   { key: "meter" as const, label: "البحر الشعري", icon: Music },
   { key: "tone"  as const, label: "النوع والنبرة", icon: Heart },
@@ -47,25 +59,35 @@ const branchCards = [
 
 const PoetryInterpretation = () => {
   const [input, setInput] = useState("");
-  const [result, setResult] = useState<InterpretationResult | null>(null);
+  const [entries, setEntries] = useState<InterpretationEntry[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const { addHistoryItem } = useHistory();
   const resultsRef = useRef<HTMLDivElement>(null);
 
+  const active = entries.find(e => e.id === activeId) ?? null;
+
   useEffect(() => {
-    if (result) {
+    if (active) {
       resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
-  }, [result]);
+  }, [activeId]);
 
   const handleInterpret = async () => {
     if (!input.trim()) return;
     setIsLoading(true);
-    setResult(null);
     addHistoryItem("interpret", "تفسير الأبيات", input);
     try {
       const data = await interpretVerse(input);
-      setResult(data);
+      const entry: InterpretationEntry = {
+        id: crypto.randomUUID(),
+        title: summarize(input),
+        verse: input,
+        result: data,
+      };
+      setEntries(prev => [entry, ...prev]);
+      setActiveId(entry.id);
+      setInput("");
     } finally {
       setIsLoading(false);
     }
