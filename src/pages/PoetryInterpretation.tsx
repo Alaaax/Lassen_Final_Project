@@ -124,11 +124,40 @@ const PoetryInterpretation = () => {
             </div>
           </div>
 
-          {/* النتائج */}
+          {/* سجل التفسيرات السابقة */}
+          {entries.length > 0 && (
+            <div className="max-w-3xl mx-auto mb-8">
+              <h3 className="font-kufi text-sm text-brown-700 mb-3 text-center">سجل التفسيرات</h3>
+              <div className="flex flex-wrap gap-2 justify-center">
+                {entries.map(e => (
+                  <button
+                    key={e.id}
+                    onClick={() => setActiveId(e.id)}
+                    className={`text-xs font-ui px-4 py-2 rounded-full border transition-all ${
+                      e.id === activeId
+                        ? "bg-brown-gradient text-primary-foreground border-brown-600/40 shadow-[var(--shadow-soft)]"
+                        : "bg-card/60 text-brown-700 border-brown-300/40 hover:bg-brown-100/50"
+                    }`}
+                  >
+                    {e.title}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* النتائج — تعرض التفسير النشط فقط */}
           <div ref={resultsRef} />
-          {result && (
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.5 }}>
+          {active && (
+            <motion.div key={active.id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.5 }}>
               <OrnamentalDivider />
+
+              {/* البيت الأصلي */}
+              <div className="max-w-2xl mx-auto mb-6 text-center">
+                <p className="font-amiri text-lg text-brown-700/90 leading-loose">
+                  {active.verse}
+                </p>
+              </div>
 
               <div className="relative">
                 {/* المركز: التفسير الرئيسي */}
@@ -139,7 +168,7 @@ const PoetryInterpretation = () => {
                 >
                   <h3 className="font-display text-xl mb-4 text-center">التفسير</h3>
                   <p className="font-body leading-loose text-center text-primary-foreground/95">
-                    {result.mainInterpretation}
+                    {active.result.mainInterpretation}
                   </p>
                 </motion.div>
 
@@ -160,7 +189,7 @@ const PoetryInterpretation = () => {
                           <card.icon className="h-5 w-5 text-primary-foreground" />
                         </div>
                         <h4 className="font-kufi text-xs text-brown-500 mb-2">{card.label}</h4>
-                        <p className="font-display text-sm text-brown-700">{result[card.key]}</p>
+                        <p className="font-display text-sm text-brown-700">{active.result[card.key]}</p>
                       </div>
                     </motion.div>
                   ))}
@@ -169,19 +198,16 @@ const PoetryInterpretation = () => {
             </motion.div>
           )}
 
-          {!result && !isLoading && (
+          {!active && !isLoading && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center py-12">
               <MessageSquareText className="h-16 w-16 text-brown-300 mx-auto mb-4" />
               <p className="font-body text-brown-500/70">أدخل بيتاً شعرياً لتبدأ التفسير</p>
             </motion.div>
           )}
 
-          {/* زر العودة للرئيسية */}
+          {/* زر التنقل للصفحة التالية */}
           <div className="mt-12 flex justify-center">
             <PageNavButton to="/write" label="التالي: كتابة الأبيات الشعرية" />
-          </div>
-          <div className="mt-4 flex justify-center">
-            <PageNavButton to="/" label="العودة إلى الرئيسية" variant="home" />
           </div>
         </div>
       </div>
