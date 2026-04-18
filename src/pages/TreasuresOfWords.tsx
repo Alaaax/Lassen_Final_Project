@@ -6,14 +6,15 @@
  */
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { BookOpen, Search, Volume2, Loader2, RefreshCw, Info, Database } from "lucide-react";
+import { BookOpen, Search, Volume2, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import PageLayout from "@/components/PageLayout";
 import ArabicLettersBg from "@/components/ArabicLettersBg";
+import PageNavButton from "@/components/PageNavButton";
 import { useHistory } from "@/contexts/HistoryContext";
 import {
-  explainWord, TreasuresResponse, MeaningEntry, ExampleVerse, APIError
+  explainWord, TreasuresResponse, MeaningEntry, APIError
 } from "@/services/api";
 
 // ── مؤشر الثقة ────────────────────────────────────────────────
@@ -31,28 +32,7 @@ const ConfidenceBadge = ({ level }: { level: string }) => {
   );
 };
 
-// ── بطاقة بيت شعري ────────────────────────────────────────────
-const VerseCard = ({ verse, index }: { verse: ExampleVerse; index: number }) => (
-  <motion.div
-    initial={{ opacity: 0, y: 6 }}
-    animate={{ opacity: 1, y: 0 }}
-    transition={{ delay: index * 0.1 }}
-    className="p-3 rounded-lg border border-gold/15 bg-gold/5 space-y-1"
-  >
-    <blockquote className="font-display text-sm text-foreground leading-loose text-center">
-      {verse.verse}
-    </blockquote>
-    <div className="flex items-center justify-center gap-2 flex-wrap">
-      <p className="font-ui text-[10px] text-gold/60">— {verse.poet}</p>
-      {/* شارة المصدر — فقط إذا من الداتاست */}
-      {verse.source === "database" && (
-        <span className="flex items-center gap-0.5 text-[9px] text-emerald-500/70 border border-emerald-500/20 rounded-full px-1.5 py-0.5">
-          <Database className="h-2 w-2" /> من قاعدة البيانات
-        </span>
-      )}
-    </div>
-  </motion.div>
-);
+// (تمت إزالة بطاقة البيت الشعري بناءً على طلب التصميم الجديد)
 
 // ── بطاقة معنى واحد ───────────────────────────────────────────
 const MeaningCard = ({ meaning, index }: { meaning: MeaningEntry; index: number }) => (
