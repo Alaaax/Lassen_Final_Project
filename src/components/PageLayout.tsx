@@ -1,6 +1,5 @@
 /**
- * PageLayout - تخطيط الصفحات الداخلية
- * يشمل الشريط الجانبي وزر التبديل
+ * PageLayout — تخطيط الصفحات الداخلية مع شريط جانبي وخلفية موحّدة دافئة
  */
 import React from "react";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
@@ -14,22 +13,24 @@ interface PageLayoutProps {
 const PageLayout: React.FC<PageLayoutProps> = ({ children, title }) => {
   return (
     <SidebarProvider defaultOpen={false}>
-      <div className="min-h-screen flex w-full">
+      <div className="min-h-screen flex w-full bg-warm-page">
         <AppSidebar />
         <div className="flex-1 flex flex-col min-h-screen">
-          {/* الشريط العلوي */}
-          <header className="h-14 flex items-center border-b border-border/50 px-4 bg-background/80 backdrop-blur-sm sticky top-0 z-40">
-            <SidebarTrigger className="text-foreground/60 hover:text-primary" />
-            {title && (
-              <h1 className="font-display text-lg text-foreground/80 mr-4">
-                {title}
-              </h1>
-            )}
+          <header className="h-14 flex items-center border-b border-brown-200/50 px-4 bg-background/70 backdrop-blur-md sticky top-0 z-40">
+            <SidebarTrigger className="text-brown-600 hover:text-brown-700" />
+            <div className="flex items-baseline gap-3 mr-4">
+              <span className="font-display text-xl text-gradient-brown leading-none">
+                لَسِنْ
+              </span>
+              {title && (
+                <>
+                  <span className="text-brown-300">•</span>
+                  <h1 className="font-kufi text-sm text-brown-600/80">{title}</h1>
+                </>
+              )}
+            </div>
           </header>
-          {/* محتوى الصفحة */}
-          <main className="flex-1 overflow-y-auto">
-            {children}
-          </main>
+          <main className="flex-1 overflow-y-auto">{children}</main>
         </div>
       </div>
     </SidebarProvider>

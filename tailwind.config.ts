@@ -14,7 +14,9 @@ export default {
     },
     extend: {
       fontFamily: {
-        display: ["Amiri", "serif"],
+        display: ["Aref Ruqaa", "Amiri", "serif"],
+        amiri: ["Amiri", "serif"],
+        kufi: ["Reem Kufi", "sans-serif"],
         body: ["Cairo", "sans-serif"],
         ui: ["Tajawal", "sans-serif"],
       },
@@ -59,6 +61,14 @@ export default {
         brown: {
           DEFAULT: "hsl(var(--brown))",
           foreground: "hsl(var(--brown-foreground))",
+          50: "hsl(var(--brown-50))",
+          100: "hsl(var(--brown-100))",
+          200: "hsl(var(--brown-200))",
+          300: "hsl(var(--brown-300))",
+          400: "hsl(var(--brown-400))",
+          500: "hsl(var(--brown-500))",
+          600: "hsl(var(--brown-600))",
+          700: "hsl(var(--brown-700))",
         },
         gold: {
           DEFAULT: "hsl(var(--gold))",
