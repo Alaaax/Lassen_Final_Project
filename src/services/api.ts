@@ -109,6 +109,25 @@ export interface JourneyResponse {
 export const getTimeJourney = (theme: string) =>
   post<JourneyResponse>("/api/journey/explore", { theme });
 
+// ── ساعدني أكتب (التوليد فقط) ─────────────────────────────────
+
+export interface GenerateVerseRequest {
+  idea: string;
+  meter_num: number;
+  num_verses?: number;
+}
+
+export interface GenerateVerseResponse {
+  success: boolean;
+  meter?: string;
+  meter_num?: number;
+  verses?: string[];
+  message?: string;
+}
+
+export const generateVerse = (payload: GenerateVerseRequest) =>
+  post<GenerateVerseResponse>("/api/write/generate", payload);
+
 // ── فسرها لي ───────────────────────────────────────────────────
 
 export interface InterpretMeter {
@@ -235,6 +254,5 @@ export const interpretVerses = (poem: string) =>
 // // export const generateVerse   = (idea: string)   => post("/api/write/generate",   { idea });
 // // export const getTimeJourney  = (topic: string)  => post("/api/journey/explore",  { topic });
 // // export const interpretVerses = (verses: string) => post("/api/interpret/verses", { verses });
-
 
 

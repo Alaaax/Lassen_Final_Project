@@ -158,6 +158,22 @@ class InterpretResponse(BaseModel):
     message: Optional[str] = None
 
 
+# ── ساعدني أكتب (توليد الأبيات فقط) ───────────────────────────
+
+class WriteGenerateRequest(BaseModel):
+    idea: str = Field(..., min_length=2, max_length=500)
+    meter_num: int = Field(default=1, ge=1, le=16)
+    num_verses: int = Field(default=4, ge=2, le=12)
+
+
+class WriteGenerateResponse(BaseModel):
+    success: bool
+    meter: Optional[str] = None
+    meter_num: Optional[int] = None
+    verses: list[str] = []
+    message: Optional[str] = None
+
+
 # ── TODO: باقي الصفحات ────────────────────────────────────────
 
 # # =============================================================

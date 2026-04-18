@@ -15,11 +15,27 @@ import ArabicLettersBg from "@/components/ArabicLettersBg";
 import OrnamentalDivider from "@/components/OrnamentalDivider";
 import PageNavButton from "@/components/PageNavButton";
 import { useHistory } from "@/contexts/HistoryContext";
+import { APIError, generateVerse } from "@/services/api";
 
 // === نقاط ربط النماذج (لا تغيّر بنية التواقيع) ================
 async function generatePoetry(idea: string): Promise<string> {
-  await new Promise((r) => setTimeout(r, 1500));
-  return `من وحي "${idea}":\n\nإذا المرءُ لا يرعاكَ إلا تكلُّفاً\nفدعْهُ ولا تُكثِر عليه التأسُّفا\n\n— هذا مثال توضيحي، سيُستبدل بنتائج النموذج`;
+  const response = await generateVerse({
+    idea,
+    meter_num: 1, // حاليًا نبدأ بالبحر الافتراضي (الطويل)
+    num_verses: 4,
+  });
+
+  if (!response.success) {
+    throw new Error(response.message || "تعذّر توليد الأبيات.");
+  }
+
+  const verses = (response.verses || []).filter((v) => v.trim().length > 0);
+  if (verses.length === 0) {
+    throw new Error("لم يتم توليد أبيات صالحة، حاول بفكرة أخرى.");
+  }
+
+  const meterLine = response.meter ? `البحر: ${response.meter}\n\n` : "";
+  return `${meterLine}${verses.join("\n")}`;
 }
 async function completeVerse(partial: string): Promise<string> {
   await new Promise((r) => setTimeout(r, 1500));
@@ -159,11 +175,13 @@ const HelpMeWrite = () => {
   const [completeActiveId, setCompleteActiveId] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
+  const [generateError, setGenerateError] = useState<string | null>(null);
   const { addHistoryItem } = useHistory();
 
   const handleGenerate = async () => {
     if (!generateInput.trim()) return;
     setIsGenerating(true);
+    setGenerateError(null);
     addHistoryItem("write", "ساعدني أكتب", generateInput);
     try {
       const result = await generatePoetry(generateInput);
@@ -176,6 +194,14 @@ const HelpMeWrite = () => {
       setGenerateHistory(prev => [entry, ...prev]);
       setGenerateActiveId(entry.id);
       setGenerateInput("");
+    } catch (error) {
+      const message =
+        error instanceof APIError
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : "تعذّر توليد الأبيات حالياً. حاول مرة أخرى.";
+      setGenerateError(message);
     } finally {
       setIsGenerating(false);
     }
@@ -223,6 +249,11 @@ const HelpMeWrite = () => {
             </TabsList>
 
             <TabsContent value="generate">
+              {generateError && (
+                <div className="max-w-2xl mx-auto mb-4 rounded-lg border border-red-300/40 bg-red-100/30 p-3">
+                  <p className="font-ui text-sm text-red-700">{generateError}</p>
+                </div>
+              )}
               <FeatureSection
                 label="اكتب فكرة أو موضوعاً"
                 placeholder="مثال: الشوق إلى الوطن، جمال الصحراء، الحب الأول..."

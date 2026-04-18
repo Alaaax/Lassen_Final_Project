@@ -16,6 +16,7 @@ from schemas import (
     MoodRequest, MoodResponse, PoemEntry,
     JourneyRequest, JourneyResponse, JourneyEraPoem, JourneySummary,
     InterpretRequest, InterpretResponse,
+    WriteGenerateRequest, WriteGenerateResponse,
 )
 
 # دعم التشغيل لثلاث هيكليات:
@@ -29,6 +30,7 @@ try:
     from services.poetry_retriever import get_poems_for_mood, get_db_stats
     from services.journey_service import build_time_journey
     from services.fasserha_service import fasserha_api_response
+    from services.help_me_write_service import generate_poetry_response
 except ModuleNotFoundError:
     try:
         from Backend.services.siwar_service import get_siwar_definition
@@ -37,6 +39,7 @@ except ModuleNotFoundError:
         from Backend.services.poetry_retriever import get_poems_for_mood, get_db_stats
         from Backend.services.journey_service import build_time_journey
         from Backend.services.fasserha_service import fasserha_api_response
+        from Backend.services.help_me_write_service import generate_poetry_response
     except ModuleNotFoundError:
         from siwar_service import get_siwar_definition
         from ai_service import explain_word, get_mood_response
@@ -44,6 +47,7 @@ except ModuleNotFoundError:
         from poetry_retriever import get_poems_for_mood, get_db_stats
         from journey_service import build_time_journey
         from fasserha_service import fasserha_api_response
+        from help_me_write_service import generate_poetry_response
 load_dotenv()
 
 app = FastAPI(title="بيت القصيد API", version="1.0.0")
@@ -218,6 +222,38 @@ async def mood_poems(req: MoodRequest):
             response_type = "redirect",
             message       = result.get("message", ""),
         )
+
+
+# =============================================================
+# 🔌 ساعدني أكتب (توليد) — POST /api/write/generate
+# =============================================================
+
+@app.post("/api/write/generate", response_model=WriteGenerateResponse)
+async def generate_write_poetry(req: WriteGenerateRequest):
+    try:
+        payload = await asyncio.to_thread(
+            generate_poetry_response,
+            req.idea,
+            req.meter_num,
+            req.num_verses,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"خطأ توليد الأبيات: {str(e)}")
+
+    if not payload.get("success"):
+        raise HTTPException(status_code=422, detail=payload.get("message", "تعذر توليد الأبيات"))
+
+    return WriteGenerateResponse(
+        success=True,
+        meter=payload.get("meter"),
+        meter_num=req.meter_num,
+        verses=payload.get("verses", []),
+        message=payload.get("message"),
+    )
 
 
 # =============================================================
