@@ -84,8 +84,6 @@ interface WordEntry { id: string; data: TreasuresResponse }
 
 const TreasuresOfWords = () => {
   const [input,       setInput]       = useState("");
-  const [verse,       setVerse]       = useState("");
-  const [showVerse,   setShowVerse]   = useState(false);
   const [entries,     setEntries]     = useState<WordEntry[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [isLoading,   setIsLoading]   = useState(false);
@@ -100,7 +98,7 @@ const TreasuresOfWords = () => {
     if (!followup) addHistoryItem("treasures", "كنوز الكلمات", word);
 
     try {
-      const result = await explainWord(word, verse.trim() || undefined, followup);
+      const result = await explainWord(word, undefined, followup);
 
       if (result.status === "error") {
         setError(result.message || "تعذّر شرح هذه الكلمة");
@@ -115,8 +113,6 @@ const TreasuresOfWords = () => {
         setEntries(prev => [entry, ...prev]);
         setActiveIndex(0);
         setInput("");
-        setVerse("");
-        setShowVerse(false);
       }
     } catch (e) {
       setError(e instanceof APIError ? e.message : "تعذّر الاتصال بالسيرفر");
