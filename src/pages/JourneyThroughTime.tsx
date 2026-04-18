@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import PageLayout from "@/components/PageLayout";
 import ArabicLettersBg from "@/components/ArabicLettersBg";
 import OrnamentalDivider from "@/components/OrnamentalDivider";
+import PageNavButton from "@/components/PageNavButton";
 import { useHistory } from "@/contexts/HistoryContext";
 import { APIError, getTimeJourney, type JourneyResponse } from "@/services/api";
 import { useToast } from "@/hooks/use-toast";
