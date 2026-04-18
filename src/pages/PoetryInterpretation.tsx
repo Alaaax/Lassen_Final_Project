@@ -3,13 +3,13 @@
  * — العنوان: "فسر الأبيات الشعرية"
  * — auto-scroll للنتائج عند الضغط
  * — تصميم موحّد بألوان بنية (مركز + بطاقات متفرعة)
- * — زر العودة للرئيسية في الأسفلرحو
+ * — زر العودة للرئيسية في الأسفل
  *
  * نقطة ربط نموذج AI: الدالة interpretVerse
  */
 import { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
-import { MessageSquareText, Loader2, Music, Heart, Calendar, User } from "lucide-react";
+import { MessageSquareText, Loader2, Music, Heart, Calendar } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import PageLayout from "@/components/PageLayout";
@@ -25,7 +25,6 @@ interface InterpretationResult {
   meter: string;
   tone: string;
   era: string;
-  poet: string;
 }
 
 interface InterpretationEntry {
@@ -42,7 +41,6 @@ async function interpretVerse(verse: string): Promise<InterpretationResult> {
     meter: response.data.meter.arabic,
     tone: response.data.topic.label,
     era: response.data.era.label,
-    poet: "—",
   };
 }
 
@@ -55,7 +53,6 @@ const branchCards = [
   { key: "meter" as const, label: "البحر الشعري", icon: Music },
   { key: "tone"  as const, label: "النوع والنبرة", icon: Heart },
   { key: "era"   as const, label: "العصر والتاريخ", icon: Calendar },
-  { key: "poet"  as const, label: "الشاعر", icon: User },
 ];
 
 const PoetryInterpretation = () => {
@@ -185,7 +182,7 @@ const PoetryInterpretation = () => {
                 </motion.div>
 
                 {/* البطاقات الفرعية بنفس الثيم البنّي */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-4xl mx-auto">
                   {branchCards.map((card, i) => (
                     <motion.div
                       key={card.key}
