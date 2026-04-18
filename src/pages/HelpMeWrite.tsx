@@ -28,7 +28,7 @@ async function completeVerse(partial: string): Promise<string> {
 
 interface HistoryEntry {
   id: string;
-  title: string;   // ملخص قصير للطلب
+  title: string;
   prompt: string;
   result: string;
 }
@@ -47,29 +47,119 @@ const ResultCard = ({ entry }: { entry: HistoryEntry }) => (
   </div>
 );
 
+interface FeatureSectionProps {
+  label: string;
+  placeholder: string;
+  buttonIdle: string;
+  buttonLoading: string;
+  buttonIcon: React.ReactNode;
+  historyTitle: string;
+  history: HistoryEntry[];
+  activeId: string | null;
+  setActiveId: (id: string | null) => void;
+  input: string;
+  setInput: (v: string) => void;
+  isLoading: boolean;
+  onSubmit: () => void;
+}
+
+const FeatureSection = ({
+  label, placeholder, buttonIdle, buttonLoading, buttonIcon,
+  historyTitle, history, activeId, setActiveId,
+  input, setInput, isLoading, onSubmit,
+}: FeatureSectionProps) => {
+  const active = history.find(h => h.id === activeId) ?? history[0] ?? null;
+  const resultsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (active) {
+      resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [active?.id]);
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* اليمين: الميزة + الناتج النشط */}
+      <div className="lg:col-span-2 order-1">
+        <div className="glass-card-warm p-8">
+          <label className="font-ui text-sm text-brown-700 mb-3 block">{label}</label>
+          <Textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder={placeholder}
+            className="font-body min-h-[100px] bg-background/60 border-brown-300/40 focus:border-brown-500/60"
+          />
+          <Button
+            onClick={onSubmit}
+            disabled={!input.trim() || isLoading}
+            className="mt-4 font-ui bg-brown-gradient text-primary-foreground gap-2 rounded-full px-6"
+          >
+            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : buttonIcon}
+            {isLoading ? buttonLoading : buttonIdle}
+          </Button>
+        </div>
+
+        <div ref={resultsRef} />
+        {active && (
+          <div className="mt-6">
+            <OrnamentalDivider className="my-4" />
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={active.id}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+              >
+                <ResultCard entry={active} />
+              </motion.div>
+            </AnimatePresence>
+          </div>
+        )}
+      </div>
+
+      {/* اليسار: السجل القابل للنقر */}
+      <aside className="order-2 lg:sticky lg:top-20 lg:self-start">
+        <div className="glass-card p-4">
+          <h3 className="font-kufi text-sm text-brown-700 mb-3">{historyTitle}</h3>
+          {history.length === 0 ? (
+            <p className="font-body text-xs text-brown-500/60">لا يوجد سجل بعد</p>
+          ) : (
+            <ul className="space-y-2 max-h-[400px] overflow-y-auto scrollbar-thin">
+              {history.map(e => {
+                const isActive = (active?.id ?? history[0]?.id) === e.id;
+                return (
+                  <li key={e.id}>
+                    <button
+                      onClick={() => setActiveId(e.id)}
+                      className={`w-full text-right text-xs font-ui px-3 py-2 rounded-lg border transition-all ${
+                        isActive
+                          ? "bg-brown-gradient text-primary-foreground border-brown-600/40 shadow-[var(--shadow-soft)]"
+                          : "bg-brown-100/40 text-brown-700 border-brown-200/40 hover:bg-brown-100/70"
+                      }`}
+                    >
+                      {e.title}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </aside>
+    </div>
+  );
+};
+
 const HelpMeWrite = () => {
   const [generateInput, setGenerateInput] = useState("");
   const [completeInput, setCompleteInput] = useState("");
   const [generateHistory, setGenerateHistory] = useState<HistoryEntry[]>([]);
   const [completeHistory, setCompleteHistory] = useState<HistoryEntry[]>([]);
+  const [generateActiveId, setGenerateActiveId] = useState<string | null>(null);
+  const [completeActiveId, setCompleteActiveId] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
   const { addHistoryItem } = useHistory();
-
-  const generateResultsRef = useRef<HTMLDivElement>(null);
-  const completeResultsRef = useRef<HTMLDivElement>(null);
-
-  // auto-scroll عند ظهور نتيجة جديدة
-  useEffect(() => {
-    if (generateHistory.length > 0) {
-      generateResultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  }, [generateHistory.length]);
-  useEffect(() => {
-    if (completeHistory.length > 0) {
-      completeResultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  }, [completeHistory.length]);
 
   const handleGenerate = async () => {
     if (!generateInput.trim()) return;
@@ -77,12 +167,14 @@ const HelpMeWrite = () => {
     addHistoryItem("write", "ساعدني أكتب", generateInput);
     try {
       const result = await generatePoetry(generateInput);
-      setGenerateHistory(prev => [{
+      const entry: HistoryEntry = {
         id: crypto.randomUUID(),
         title: summarize(generateInput),
         prompt: generateInput,
         result,
-      }, ...prev]);
+      };
+      setGenerateHistory(prev => [entry, ...prev]);
+      setGenerateActiveId(entry.id);
       setGenerateInput("");
     } finally {
       setIsGenerating(false);
@@ -95,12 +187,14 @@ const HelpMeWrite = () => {
     addHistoryItem("write", "ساعدني أكتب", completeInput);
     try {
       const result = await completeVerse(completeInput);
-      setCompleteHistory(prev => [{
+      const entry: HistoryEntry = {
         id: crypto.randomUUID(),
         title: summarize(completeInput),
         prompt: completeInput,
         result,
-      }, ...prev]);
+      };
+      setCompleteHistory(prev => [entry, ...prev]);
+      setCompleteActiveId(entry.id);
       setCompleteInput("");
     } finally {
       setIsCompleting(false);
@@ -128,134 +222,43 @@ const HelpMeWrite = () => {
               </TabsTrigger>
             </TabsList>
 
-            {/* ========== توليد الأبيات ========== */}
             <TabsContent value="generate">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* اليمين: الميزة */}
-                <div className="lg:col-span-2 order-1">
-                  <div className="glass-card-warm p-8">
-                    <label className="font-ui text-sm text-brown-700 mb-3 block">اكتب فكرة أو موضوعاً</label>
-                    <Textarea
-                      value={generateInput}
-                      onChange={(e) => setGenerateInput(e.target.value)}
-                      placeholder="مثال: الشوق إلى الوطن، جمال الصحراء، الحب الأول..."
-                      className="font-body min-h-[100px] bg-background/60 border-brown-300/40 focus:border-brown-500/60"
-                    />
-                    <Button
-                      onClick={handleGenerate}
-                      disabled={!generateInput.trim() || isGenerating}
-                      className="mt-4 font-ui bg-brown-gradient text-primary-foreground gap-2 rounded-full px-6"
-                    >
-                      {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-                      {isGenerating ? "جارٍ التوليد..." : "ولّد أبيات"}
-                    </Button>
-                  </div>
-
-                  <div ref={generateResultsRef} />
-                  {generateHistory.length > 0 && (
-                    <div className="mt-6">
-                      <OrnamentalDivider className="my-4" />
-                      <AnimatePresence>
-                        <div className="space-y-4">
-                          {generateHistory.map(entry => (
-                            <motion.div
-                              key={entry.id}
-                              initial={{ opacity: 0, y: 12 }}
-                              animate={{ opacity: 1, y: 0 }}
-                            >
-                              <ResultCard entry={entry} />
-                            </motion.div>
-                          ))}
-                        </div>
-                      </AnimatePresence>
-                    </div>
-                  )}
-                </div>
-
-                {/* اليسار: السجل */}
-                <aside className="order-2 lg:sticky lg:top-20 lg:self-start">
-                  <div className="glass-card p-4">
-                    <h3 className="font-kufi text-sm text-brown-700 mb-3">سجل التوليد</h3>
-                    {generateHistory.length === 0 ? (
-                      <p className="font-body text-xs text-brown-500/60">لا يوجد سجل بعد</p>
-                    ) : (
-                      <ul className="space-y-2 max-h-[400px] overflow-y-auto scrollbar-thin">
-                        {generateHistory.map(e => (
-                          <li key={e.id} className="text-xs font-ui text-brown-700 px-3 py-2 rounded-lg bg-brown-100/40 border border-brown-200/40">
-                            {e.title}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                </aside>
-              </div>
+              <FeatureSection
+                label="اكتب فكرة أو موضوعاً"
+                placeholder="مثال: الشوق إلى الوطن، جمال الصحراء، الحب الأول..."
+                buttonIdle="ولّد أبيات"
+                buttonLoading="جارٍ التوليد..."
+                buttonIcon={<Wand2 className="h-4 w-4" />}
+                historyTitle="سجل التوليد"
+                history={generateHistory}
+                activeId={generateActiveId}
+                setActiveId={setGenerateActiveId}
+                input={generateInput}
+                setInput={setGenerateInput}
+                isLoading={isGenerating}
+                onSubmit={handleGenerate}
+              />
             </TabsContent>
 
-            {/* ========== إكمال البيت ========== */}
             <TabsContent value="complete">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 order-1">
-                  <div className="glass-card-warm p-8">
-                    <label className="font-ui text-sm text-brown-700 mb-3 block">اكتب بيتاً ناقصاً أو شطراً</label>
-                    <Textarea
-                      value={completeInput}
-                      onChange={(e) => setCompleteInput(e.target.value)}
-                      placeholder="مثال: إذا المرءُ لا يرعاكَ إلا تكلُّفاً..."
-                      className="font-body min-h-[100px] bg-background/60 border-brown-300/40 focus:border-brown-500/60"
-                    />
-                    <Button
-                      onClick={handleComplete}
-                      disabled={!completeInput.trim() || isCompleting}
-                      className="mt-4 font-ui bg-brown-gradient text-primary-foreground gap-2 rounded-full px-6"
-                    >
-                      {isCompleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowLeft className="h-4 w-4" />}
-                      {isCompleting ? "جارٍ البحث..." : "أكمل البيت"}
-                    </Button>
-                  </div>
-
-                  <div ref={completeResultsRef} />
-                  {completeHistory.length > 0 && (
-                    <div className="mt-6">
-                      <OrnamentalDivider className="my-4" />
-                      <AnimatePresence>
-                        <div className="space-y-4">
-                          {completeHistory.map(entry => (
-                            <motion.div
-                              key={entry.id}
-                              initial={{ opacity: 0, y: 12 }}
-                              animate={{ opacity: 1, y: 0 }}
-                            >
-                              <ResultCard entry={entry} />
-                            </motion.div>
-                          ))}
-                        </div>
-                      </AnimatePresence>
-                    </div>
-                  )}
-                </div>
-
-                <aside className="order-2 lg:sticky lg:top-20 lg:self-start">
-                  <div className="glass-card p-4">
-                    <h3 className="font-kufi text-sm text-brown-700 mb-3">سجل الإكمال</h3>
-                    {completeHistory.length === 0 ? (
-                      <p className="font-body text-xs text-brown-500/60">لا يوجد سجل بعد</p>
-                    ) : (
-                      <ul className="space-y-2 max-h-[400px] overflow-y-auto scrollbar-thin">
-                        {completeHistory.map(e => (
-                          <li key={e.id} className="text-xs font-ui text-brown-700 px-3 py-2 rounded-lg bg-brown-100/40 border border-brown-200/40">
-                            {e.title}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                </aside>
-              </div>
+              <FeatureSection
+                label="اكتب بيتاً ناقصاً أو شطراً"
+                placeholder="مثال: إذا المرءُ لا يرعاكَ إلا تكلُّفاً..."
+                buttonIdle="أكمل البيت"
+                buttonLoading="جارٍ البحث..."
+                buttonIcon={<ArrowLeft className="h-4 w-4" />}
+                historyTitle="سجل الإكمال"
+                history={completeHistory}
+                activeId={completeActiveId}
+                setActiveId={setCompleteActiveId}
+                input={completeInput}
+                setInput={setCompleteInput}
+                isLoading={isCompleting}
+                onSubmit={handleComplete}
+              />
             </TabsContent>
           </Tabs>
 
-          {/* زر التنقل التالي */}
           <div className="mt-12 flex justify-center">
             <PageNavButton to="/treasures" label="التالي: كنوز الكلمات" />
           </div>

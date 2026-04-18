@@ -34,6 +34,25 @@ const ConfidenceBadge = ({ level }: { level: string }) => {
 
 // (تمت إزالة بطاقة البيت الشعري بناءً على طلب التصميم الجديد)
 
+// ── بطاقة بيت شعري مثال ──────────────────────────────────────
+const ExampleVerseCard = ({ verse }: { verse: { verse: string; poet: string; source: "database" | "gpt" } }) => (
+  <div className="p-3 rounded-lg bg-brown-50/40 border border-brown-200/40 space-y-1.5">
+    <p className="font-amiri text-sm text-brown-700 leading-loose text-center">
+      {verse.verse}
+    </p>
+    <div className="flex items-center justify-between gap-2">
+      {verse.poet && verse.poet !== "مجهول" && (
+        <p className="font-ui text-[10px] text-brown-500/70">— {verse.poet}</p>
+      )}
+      {verse.source === "database" && (
+        <span className="text-[9px] text-emerald-500/80 border border-emerald-400/20 rounded-full px-1.5 py-0.5 font-ui">
+          من قاعدة البيانات
+        </span>
+      )}
+    </div>
+  </div>
+);
+
 // ── بطاقة معنى واحد ───────────────────────────────────────────
 const MeaningCard = ({ meaning, index }: { meaning: MeaningEntry; index: number }) => (
   <div className="space-y-0.5">
@@ -65,8 +84,6 @@ interface WordEntry { id: string; data: TreasuresResponse }
 
 const TreasuresOfWords = () => {
   const [input,       setInput]       = useState("");
-  const [verse,       setVerse]       = useState("");
-  const [showVerse,   setShowVerse]   = useState(false);
   const [entries,     setEntries]     = useState<WordEntry[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [isLoading,   setIsLoading]   = useState(false);
@@ -81,7 +98,7 @@ const TreasuresOfWords = () => {
     if (!followup) addHistoryItem("treasures", "كنوز الكلمات", word);
 
     try {
-      const result = await explainWord(word, verse.trim() || undefined, followup);
+      const result = await explainWord(word, undefined, followup);
 
       if (result.status === "error") {
         setError(result.message || "تعذّر شرح هذه الكلمة");
@@ -96,8 +113,6 @@ const TreasuresOfWords = () => {
         setEntries(prev => [entry, ...prev]);
         setActiveIndex(0);
         setInput("");
-        setVerse("");
-        setShowVerse(false);
       }
     } catch (e) {
       setError(e instanceof APIError ? e.message : "تعذّر الاتصال بالسيرفر");
@@ -278,6 +293,20 @@ const TreasuresOfWords = () => {
                       </p>
                     </div>
                   )}
+
+                  {/* ── أمثلة شعرية على استخدام الكلمة ── */}
+                  {active.data.example_verses && active.data.example_verses.length > 0 && (
+                    <div className="space-y-2">
+                      <h4 className="font-ui text-xs text-gold mb-1 tracking-wider">
+                        أمثلة من الشعر
+                      </h4>
+                      <div className="space-y-2">
+                        {active.data.example_verses.map((v, i) => (
+                          <ExampleVerseCard key={i} verse={v} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </motion.div>
             ) : (
@@ -317,6 +346,11 @@ const TreasuresOfWords = () => {
               ))}
             </div>
           )}
+
+          {/* زر العودة للصفحة الرئيسية */}
+          <div className="mt-12 flex justify-center">
+            <PageNavButton to="/" label="العودة إلى الصفحة الرئيسية" variant="home" />
+          </div>
 
         </div>
       </div>

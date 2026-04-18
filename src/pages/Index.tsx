@@ -22,40 +22,58 @@ const features = [
 // حروف "شعر" متطايرة في الـ Hero
 const POETRY_LETTERS = ["ش", "ع", "ر"];
 
-const HeroFloatingLetters = () => (
-  <div className="absolute inset-0 overflow-hidden pointer-events-none">
-    {Array.from({ length: 14 }).map((_, i) => {
-      const letter = POETRY_LETTERS[i % POETRY_LETTERS.length];
-      const size = 60 + Math.random() * 90;
-      return (
+// حروف "شعر" متطايرة — ممتدة لكامل الصفحة (fixed) بشفافية أعلى وتباعد أكبر
+const HeroFloatingLetters = () => {
+  // مواقع موزّعة على شبكة لتجنّب التداخل
+  const items = Array.from({ length: 22 }).map((_, i) => {
+    const letter = POETRY_LETTERS[i % POETRY_LETTERS.length];
+    const cols = 5;
+    const rows = 5;
+    const col = i % cols;
+    const row = Math.floor(i / cols) % rows;
+    const jitterX = (Math.random() - 0.5) * 10;
+    const jitterY = (Math.random() - 0.5) * 10;
+    return {
+      letter,
+      size: 26 + Math.random() * 22, // أصغر بكثير
+      left: (col / (cols - 1)) * 100 + jitterX,
+      top: (row / (rows - 1)) * 100 + jitterY,
+      duration: 12 + Math.random() * 10,
+      delay: Math.random() * 5,
+    };
+  });
+
+  return (
+    <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
+      {items.map((it, i) => (
         <motion.span
           key={i}
           className="absolute font-display text-gradient-gold select-none"
           style={{
-            fontSize: `${size}px`,
-            left: `${Math.random() * 100}%`,
-            top: `${Math.random() * 100}%`,
-            opacity: 0.18,
+            fontSize: `${it.size}px`,
+            left: `${it.left}%`,
+            top: `${it.top}%`,
+            opacity: 0.09,
           }}
           animate={{
-            y: [0, -25, 0],
-            x: [0, 10, -5, 0],
-            rotate: [0, 5, -5, 0],
-            opacity: [0.12, 0.28, 0.12],
+            y: [0, -18, 0],
+            x: [0, 6, -4, 0],
+            rotate: [0, 3, -3, 0],
+            opacity: [0.06, 0.14, 0.06],
           }}
           transition={{
-            duration: 10 + Math.random() * 8,
+            duration: it.duration,
             repeat: Infinity,
-            delay: Math.random() * 4,
+            delay: it.delay,
             ease: "easeInOut",
           }}
         >
-          {letter}
+          {it.letter}
         </motion.span>
-      );
-    })}
-  </div>
-);
+      ))}
+    </div>
+  );
+};
 
 const fadeUp = {
   hidden: { opacity: 0, y: 30 },
@@ -66,31 +84,36 @@ const fadeUp = {
   }),
 };
 
-// ── Roadmap دائري للميزات الخمس ──────────────────────────────
+// ── Roadmap دائري متوازن للميزات الخمس ──────────────────────
 const RoadmapFeatures = ({ onSelect }: { onSelect: (url: string) => void }) => {
+  const RADIUS = 38; // نسبة من حجم الحاوية
   return (
-    <div className="relative w-full max-w-3xl mx-auto aspect-square max-h-[640px] my-8">
-      {/* خطوط زخرفية تربط المركز بالبطاقات */}
-      <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100">
+    <div className="relative w-full max-w-2xl mx-auto aspect-square my-8">
+      {/* خطوط زخرفية */}
+      <svg
+        className="absolute inset-0 w-full h-full pointer-events-none"
+        viewBox="0 0 100 100"
+        preserveAspectRatio="xMidYMid meet"
+      >
+        <circle cx="50" cy="50" r={RADIUS} fill="none" stroke="hsl(var(--brown-300))" strokeWidth="0.25" strokeDasharray="0.6 1.2" opacity="0.4" />
         {features.map((_, i) => {
           const angle = (i / features.length) * Math.PI * 2 - Math.PI / 2;
-          const x = 50 + Math.cos(angle) * 38;
-          const y = 50 + Math.sin(angle) * 38;
+          const x = 50 + Math.cos(angle) * RADIUS;
+          const y = 50 + Math.sin(angle) * RADIUS;
           return (
             <line
               key={i}
               x1="50" y1="50" x2={x} y2={y}
               stroke="hsl(var(--brown-400))"
-              strokeWidth="0.25"
-              strokeDasharray="0.8 0.8"
-              opacity="0.4"
+              strokeWidth="0.2"
+              strokeDasharray="0.6 0.8"
+              opacity="0.35"
             />
           );
         })}
-        <circle cx="50" cy="50" r="38" fill="none" stroke="hsl(var(--brown-300))" strokeWidth="0.2" strokeDasharray="0.5 1" opacity="0.3" />
       </svg>
 
-      {/* المركز: لَسِنْ */}
+      {/* المركز */}
       <motion.div
         initial={{ opacity: 0, scale: 0.5 }}
         whileInView={{ opacity: 1, scale: 1 }}
@@ -98,17 +121,17 @@ const RoadmapFeatures = ({ onSelect }: { onSelect: (url: string) => void }) => {
         transition={{ duration: 0.6 }}
         className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10"
       >
-        <div className="w-32 h-32 sm:w-40 sm:h-40 rounded-full bg-brown-gradient flex flex-col items-center justify-center shadow-[var(--shadow-warm)] border-2 border-gold/30">
+        <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-full bg-brown-gradient flex flex-col items-center justify-center shadow-[var(--shadow-warm)] border-2 border-gold/30">
           <span className="font-display text-3xl sm:text-4xl text-primary-foreground">لَسِنْ</span>
           <span className="font-kufi text-[10px] sm:text-xs text-primary-foreground/70 mt-1">رحلة الشعر</span>
         </div>
       </motion.div>
 
-      {/* البطاقات حول المركز */}
+      {/* البطاقات حول المركز — مواضع متماثلة */}
       {features.map((feature, i) => {
         const angle = (i / features.length) * Math.PI * 2 - Math.PI / 2;
-        const x = 50 + Math.cos(angle) * 38;
-        const y = 50 + Math.sin(angle) * 38;
+        const x = 50 + Math.cos(angle) * RADIUS;
+        const y = 50 + Math.sin(angle) * RADIUS;
         return (
           <motion.button
             key={feature.url}
@@ -121,9 +144,9 @@ const RoadmapFeatures = ({ onSelect }: { onSelect: (url: string) => void }) => {
             className="absolute -translate-x-1/2 -translate-y-1/2 group"
             style={{ left: `${x}%`, top: `${y}%` }}
           >
-            <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-2xl bg-brown-soft border border-brown-300/50 shadow-[var(--shadow-soft)] flex flex-col items-center justify-center p-3 text-center transition-all hover:border-gold/50 hover:shadow-[var(--shadow-warm)]">
-              <feature.icon className="h-6 w-6 sm:h-7 sm:w-7 text-brown-700 mb-2 group-hover:scale-110 transition-transform" />
-              <span className="font-kufi text-xs sm:text-sm text-brown-700 leading-tight">{feature.title}</span>
+            <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl bg-brown-soft border border-brown-300/50 shadow-[var(--shadow-soft)] flex flex-col items-center justify-center p-2 text-center transition-all hover:border-gold/50 hover:shadow-[var(--shadow-warm)]">
+              <feature.icon className="h-5 w-5 sm:h-6 sm:w-6 text-brown-700 mb-1.5 group-hover:scale-110 transition-transform" />
+              <span className="font-kufi text-[11px] sm:text-xs text-brown-700 leading-tight">{feature.title}</span>
             </div>
           </motion.button>
         );
