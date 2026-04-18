@@ -109,6 +109,8 @@ export interface JourneyResponse {
 export const getTimeJourney = (theme: string) =>
   post<JourneyResponse>("/api/journey/explore", { theme });
 
+
+
 // TODO:
 // export const generateVerse   = (idea: string)   => post("/api/write/generate",   { idea });
 // export const interpretVerses = (verses: string) => post("/api/interpret/verses", { verses });
