@@ -293,6 +293,20 @@ const TreasuresOfWords = () => {
                       </p>
                     </div>
                   )}
+
+                  {/* ── أمثلة شعرية على استخدام الكلمة ── */}
+                  {active.data.example_verses && active.data.example_verses.length > 0 && (
+                    <div className="space-y-2">
+                      <h4 className="font-ui text-xs text-gold mb-1 tracking-wider">
+                        أمثلة من الشعر
+                      </h4>
+                      <div className="space-y-2">
+                        {active.data.example_verses.map((v, i) => (
+                          <ExampleVerseCard key={i} verse={v} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </motion.div>
             ) : (
