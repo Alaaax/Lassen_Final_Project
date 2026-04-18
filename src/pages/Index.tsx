@@ -122,11 +122,54 @@ const RoadmapFeatures = ({ onSelect }: { onSelect: (url: string) => void }) => {
         </div>
       </motion.div>
 
-      {/* البطاقات حول المركز */}
+// ── Roadmap دائري متوازن للميزات الخمس ──────────────────────
+const RoadmapFeatures = ({ onSelect }: { onSelect: (url: string) => void }) => {
+  const RADIUS = 38; // نسبة من حجم الحاوية
+  return (
+    <div className="relative w-full max-w-2xl mx-auto aspect-square my-8">
+      {/* خطوط زخرفية */}
+      <svg
+        className="absolute inset-0 w-full h-full pointer-events-none"
+        viewBox="0 0 100 100"
+        preserveAspectRatio="xMidYMid meet"
+      >
+        <circle cx="50" cy="50" r={RADIUS} fill="none" stroke="hsl(var(--brown-300))" strokeWidth="0.25" strokeDasharray="0.6 1.2" opacity="0.4" />
+        {features.map((_, i) => {
+          const angle = (i / features.length) * Math.PI * 2 - Math.PI / 2;
+          const x = 50 + Math.cos(angle) * RADIUS;
+          const y = 50 + Math.sin(angle) * RADIUS;
+          return (
+            <line
+              key={i}
+              x1="50" y1="50" x2={x} y2={y}
+              stroke="hsl(var(--brown-400))"
+              strokeWidth="0.2"
+              strokeDasharray="0.6 0.8"
+              opacity="0.35"
+            />
+          );
+        })}
+      </svg>
+
+      {/* المركز */}
+      <motion.div
+        initial={{ opacity: 0, scale: 0.5 }}
+        whileInView={{ opacity: 1, scale: 1 }}
+        viewport={{ once: true }}
+        transition={{ duration: 0.6 }}
+        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10"
+      >
+        <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-full bg-brown-gradient flex flex-col items-center justify-center shadow-[var(--shadow-warm)] border-2 border-gold/30">
+          <span className="font-display text-3xl sm:text-4xl text-primary-foreground">لَسِنْ</span>
+          <span className="font-kufi text-[10px] sm:text-xs text-primary-foreground/70 mt-1">رحلة الشعر</span>
+        </div>
+      </motion.div>
+
+      {/* البطاقات حول المركز — مواضع متماثلة */}
       {features.map((feature, i) => {
         const angle = (i / features.length) * Math.PI * 2 - Math.PI / 2;
-        const x = 50 + Math.cos(angle) * 38;
-        const y = 50 + Math.sin(angle) * 38;
+        const x = 50 + Math.cos(angle) * RADIUS;
+        const y = 50 + Math.sin(angle) * RADIUS;
         return (
           <motion.button
             key={feature.url}
@@ -139,9 +182,9 @@ const RoadmapFeatures = ({ onSelect }: { onSelect: (url: string) => void }) => {
             className="absolute -translate-x-1/2 -translate-y-1/2 group"
             style={{ left: `${x}%`, top: `${y}%` }}
           >
-            <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-2xl bg-brown-soft border border-brown-300/50 shadow-[var(--shadow-soft)] flex flex-col items-center justify-center p-3 text-center transition-all hover:border-gold/50 hover:shadow-[var(--shadow-warm)]">
-              <feature.icon className="h-6 w-6 sm:h-7 sm:w-7 text-brown-700 mb-2 group-hover:scale-110 transition-transform" />
-              <span className="font-kufi text-xs sm:text-sm text-brown-700 leading-tight">{feature.title}</span>
+            <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl bg-brown-soft border border-brown-300/50 shadow-[var(--shadow-soft)] flex flex-col items-center justify-center p-2 text-center transition-all hover:border-gold/50 hover:shadow-[var(--shadow-warm)]">
+              <feature.icon className="h-5 w-5 sm:h-6 sm:w-6 text-brown-700 mb-1.5 group-hover:scale-110 transition-transform" />
+              <span className="font-kufi text-[11px] sm:text-xs text-brown-700 leading-tight">{feature.title}</span>
             </div>
           </motion.button>
         );
