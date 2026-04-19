@@ -25,7 +25,7 @@ from Fasserha_prompts import FASSERHA_SYSTEM_PROMPT, build_user_prompt
 
 load_dotenv()
 
-ARABIC_DIACRITICS = re.compile(r"[\u0617-\u061A\u064B-\u0652\u0670\u06D6-\u06ED]")
+ARABIC_DIACRITICS = re.compile(r"[\u0617-\u061A\u064B-\u0652\u0670\u06D6-\u06DC]")
 
 METER_LABELS = [
     "saree", "kamel", "mutakareb", "mutadarak", "munsareh",
@@ -43,17 +43,14 @@ METER_ARABIC = {
 
 TOPIC_AR = {
     "غزل_رومانسي": "غزل ورومانسية",
-    "هجاء_ذم": "هجاء وذم",
-    "وجداني": "عاطفة وحنين",
-    "مدح": "مدح وإطراء",
-    "رثاء": "رثاء وحزن",
-    "دينية": "شعر ديني",
-    "وطنية": "شعر وطني",
+    "هجاء_ذم":     "هجاء وذم",
+    "وجداني":      "عاطفة وحنين",
+    "مدح":         "مدح وإطراء",
+    "رثاء":        "رثاء وحزن",
+    "دينية":       "شعر ديني",
+    "وطنية":       "شعر وطني",
 }
 
-
-def _device() -> torch.device:
-    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def _model_device(model) -> torch.device:
     for p in model.parameters():
@@ -186,29 +183,68 @@ def predict_topic(poem_text: str) -> dict[str, Any]:
     top3 = np.argsort(probs)[::-1][:3]
     top_label_raw = id2label_topic[int(top3[0])]
     return {
-        "topic": _topic_to_ar(top_label_raw),
-        "topic_raw": top_label_raw,
+        "topic":      _topic_to_ar(top_label_raw),
+        "topic_raw":  top_label_raw,
         "confidence": round(float(probs[top3[0]]), 3),
-        "top3": [{"label": _topic_to_ar(id2label_topic[int(i)]), "prob": round(float(probs[i]), 3)} for i in top3],
+        "top3":       [{"label": _topic_to_ar(id2label_topic[int(i)]), "prob": round(float(probs[i]), 3)} for i in top3],
     }
 
 
-def _generate_explanation(
-    poem_text: str,
-    meter_name: str,
-    era_name: str,
-    topic_name: str,
-    depth: str = "brief",
-) -> dict[str, Any]:
-    """
-    يرسل للـ GPT ويُرجع dict منظّم.
-    depth: "brief" | "deep"
-    """
-    user_prompt = build_user_prompt(poem_text, meter_name, era_name, topic_name, depth)
-    model_name = os.getenv("FASSERHA_LLM_MODEL", "gpt-4o").strip()
+def _count_verses(poem_text: str) -> int:
+    """يحسب عدد الأبيات تقريباً."""
+    lines = [l.strip() for l in poem_text.strip().split("\n") if l.strip()]
+    return max(1, len(lines))
 
-    # حد الـ tokens حسب الـ depth
-    max_tokens = 600 if depth == "brief" else 1200
+
+def _calc_max_tokens(depth: str, verses_count: int) -> int:
+    """يحسب الـ max_tokens حسب العمق وعدد الأبيات."""
+    if depth == "brief":
+        return 600
+    # deep: 150 توكن لكل بيت + 800 للـ JSON structure
+    return min(800 + (verses_count * 150), 4096)
+
+
+def _safe_parse_json(raw: str, depth: str) -> dict[str, Any]:
+    """يحاول يحلل الـ JSON — إذا فشل يرجع fallback نظيف."""
+    fallback = {
+        "status": "ok", "depth": depth, "summary": "",
+        "explanation": "تعذّر استكمال التفسير — حاول مرة أخرى أو اضغط توضيح أعمق.",
+        "verses_breakdown": [], "imagery": "", "meter_effect": "", "mood": "",
+    }
+
+    if not raw:
+        return fallback
+
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        pass
+
+    # محاولة استخراج جزئي إذا JSON مقطوع
+    try:
+        result = dict(fallback)
+        m = re.search(r'"summary"\s*:\s*"([^"]+)"', raw)
+        if m:
+            result["summary"] = m.group(1)
+        m2 = re.search(r'"explanation"\s*:\s*"([^"]+)"', raw)
+        if m2:
+            result["explanation"] = m2.group(1)
+        return result
+    except Exception:
+        return fallback
+
+
+def _generate_explanation(
+    poem_text:  str,
+    meter_name: str,
+    era_name:   str,
+    topic_name: str,
+    depth:      str = "brief",
+) -> dict[str, Any]:
+    user_prompt  = build_user_prompt(poem_text, meter_name, era_name, topic_name, depth)
+    model_name   = os.getenv("FASSERHA_LLM_MODEL", "gpt-4o").strip()
+    verses_count = _count_verses(poem_text)
+    max_tokens   = _calc_max_tokens(depth, verses_count)
 
     response = _get_openai_client().chat.completions.create(
         model=model_name,
@@ -222,20 +258,7 @@ def _generate_explanation(
     )
 
     raw = (response.choices[0].message.content or "").strip()
-
-    try:
-        result = json.loads(raw)
-    except json.JSONDecodeError:
-        result = {
-            "status": "ok",
-            "depth": depth,
-            "summary": "",
-            "explanation": raw,
-            "key_word": "",
-            "mood": "",
-        }
-
-    return result
+    return _safe_parse_json(raw, depth)
 
 
 def fasserha_li(poem_text: str, depth: str = "brief") -> dict[str, Any]:
@@ -244,19 +267,19 @@ def fasserha_li(poem_text: str, depth: str = "brief") -> dict[str, Any]:
     topic_result = predict_topic(poem_text)
 
     gpt_result = _generate_explanation(
-        poem_text=poem_text,
-        meter_name=meter_result["meter_ar"],
-        era_name=era_result["era"],
-        topic_name=topic_result["topic"],
-        depth=depth,
+        poem_text  = poem_text,
+        meter_name = meter_result["meter_ar"],
+        era_name   = era_result["era"],
+        topic_name = topic_result["topic"],
+        depth      = depth,
     )
 
     return {
-        "poem":    poem_text,
-        "meter":   meter_result,
-        "era":     era_result,
-        "topic":   topic_result,
-        "gpt":     gpt_result,
+        "poem":  poem_text,
+        "meter": meter_result,
+        "era":   era_result,
+        "topic": topic_result,
+        "gpt":   gpt_result,
     }
 
 
@@ -264,12 +287,11 @@ def fasserha_api_response(poem_text: str, depth: str = "brief") -> dict[str, Any
     result = fasserha_li(poem_text, depth)
     gpt    = result["gpt"]
 
-    # إذا GPT أرجع خطأ (نص مو عربي أو مو شعر)
     if gpt.get("status") == "error":
         return {
-            "success": False,
+            "success":    False,
             "error_type": gpt.get("error_type", "unknown"),
-            "message": gpt.get("message", "تعذّر التفسير"),
+            "message":    gpt.get("message", "تعذّر التفسير"),
         }
 
     return {
@@ -290,14 +312,13 @@ def fasserha_api_response(poem_text: str, depth: str = "brief") -> dict[str, Any
                 "confidence": result["topic"]["confidence"],
                 "top3":       result["topic"]["top3"],
             },
-            # ── حقول GPT المنظّمة ──────────────────────────
             "depth":            gpt.get("depth", depth),
             "summary":          gpt.get("summary", ""),
             "explanation":      gpt.get("explanation", ""),
             "verses_breakdown": gpt.get("verses_breakdown", []),
             "imagery":          gpt.get("imagery", ""),
             "meter_effect":     gpt.get("meter_effect", ""),
-            "key_word":         gpt.get("key_word", ""),
+            "key_word":         "",   # محذوف من العرض لكن نبقيه فارغاً للتوافق
             "mood":             gpt.get("mood", ""),
         },
     }

@@ -1,12 +1,5 @@
 /**
- * صفحة تفسير الأبيات الشعرية — التعديلات:
- * 1. تنسيق الأبيات بشكلها الشعري (سطر لكل بيت)
- * 2. حذف خانة mood تحت البيت
- * 3. التفسير يظهر فوق البطاقات الثلاث
- * 4. حذف خانة keyWord
- * 5. زر توضيح أعمق فيه علامة + بدل السهم
- * 6. حذف خانة keyWord في الـ deep أيضاً
- * 7. رسالة الخطأ تظهر تحت زر "فسّر" مباشرة
+ * صفحة تفسير الأبيات الشعرية
  */
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -36,35 +29,30 @@ interface InterpretationResult {
 }
 
 interface InterpretationEntry {
-  id:            string;
-  title:         string;
-  verse:         string;         // النص الأصلي كما أدخله المستخدم
-  formattedVerse: string;        // النص مُنسَّق كأبيات شعرية
-  result:        InterpretationResult;
+  id:             string;
+  title:          string;
+  verse:          string;
+  formattedVerse: string;
+  result:         InterpretationResult;
 }
 
 // ── تنسيق النص كأبيات شعرية ──────────────────────────────────
 function formatAsPoetry(raw: string): string {
-  // إذا فيه سطور مفصولة بـ \n خليها كما هي
-  // إذا كان نصاً مدموجاً، نحاول نقسمه على الوقفات الشعرية
   const lines = raw
-    .replace(/\s*\/\s*/g, "\n")       // / تفصل بين الشطرين
-    .replace(/\s{3,}/g, "\n")         // مسافات كثيرة = فاصل
+    .replace(/\s*\/\s*/g, "\n")
+    .replace(/\s{3,}/g, "\n")
     .split("\n")
     .map(l => l.trim())
     .filter(l => l.length > 0);
 
-  // إذا طلع سطر واحد فقط، نحاول نقسم على منتصف النص
   if (lines.length === 1 && lines[0].length > 20) {
     const mid = Math.floor(lines[0].length / 2);
-    // ابحث عن أقرب مسافة للمنتصف
     let splitAt = mid;
     for (let i = mid; i >= mid - 10 && i > 0; i--) {
       if (lines[0][i] === " ") { splitAt = i; break; }
     }
     return lines[0].slice(0, splitAt).trim() + "\n" + lines[0].slice(splitAt).trim();
   }
-
   return lines.join("\n");
 }
 
@@ -75,7 +63,6 @@ async function interpretVerse(
 ): Promise<InterpretationResult> {
   const response = await interpretVerses(verse, depth);
 
-  // إذا الباك اند أرجع error (نص غير عربي أو غير شعري)
   if (!response.success) {
     throw new APIError(422, response.message ?? "تعذّر التفسير");
   }
@@ -83,14 +70,14 @@ async function interpretVerse(
   const d = response.data!;
   return {
     mainInterpretation: d.explanation,
-    summary:            d.summary        ?? "",
+    summary:            d.summary           ?? "",
     meter:              d.meter.arabic,
     tone:               d.topic.label,
     era:                d.era.label,
-    depth:              d.depth          ?? depth,
-    versesBreakdown:    d.verses_breakdown ?? [],
-    imagery:            d.imagery        ?? "",
-    meterEffect:        d.meter_effect   ?? "",
+    depth:              d.depth             ?? depth,
+    versesBreakdown:    d.verses_breakdown  ?? [],
+    imagery:            d.imagery           ?? "",
+    meterEffect:        d.meter_effect      ?? "",
   };
 }
 
@@ -99,7 +86,6 @@ const summarize = (text: string, max = 28) => {
   return t.length > max ? t.slice(0, max) + "…" : t;
 };
 
-// ── Branch Cards ───────────────────────────────────────────────
 const branchCards = [
   { key: "meter" as const, label: "البحر الشعري",   icon: Music    },
   { key: "tone"  as const, label: "النوع والنبرة",   icon: Heart    },
@@ -116,8 +102,8 @@ const InterpretDisplay = ({
   isDeepLoading: boolean;
   onDeep: () => void;
 }) => {
-  const r      = active.result;
-  const isDeep = r.depth === "deep";
+  const r        = active.result;
+  const isDeep   = r.depth === "deep";
   const hasBreak = r.versesBreakdown && r.versesBreakdown.length > 0;
 
   return (
@@ -129,18 +115,11 @@ const InterpretDisplay = ({
     >
       <OrnamentalDivider />
 
-      {/* ── البيت مُنسَّق كأبيات شعرية ── */}
-      <div className="max-w-2xl mx-auto mb-6 text-center">
-        <p className="font-amiri text-lg text-brown-700/90 leading-loose whitespace-pre-line">
-          {active.formattedVerse}
-        </p>
-      </div>
-
       {/* ── الملخص السريع ── */}
       {r.summary && (
         <div className="max-w-2xl mx-auto mb-5 p-4 rounded-2xl bg-brown-100/50 border border-brown-200/50 text-center">
           <p className="font-body text-sm text-brown-700 leading-relaxed">
-            💡 {r.summary}
+            {r.summary}
           </p>
         </div>
       )}
@@ -153,7 +132,7 @@ const InterpretDisplay = ({
         </p>
       </div>
 
-      {/* ── البطاقات الثلاث (بعد التفسير) ── */}
+      {/* ── البطاقات الثلاث ── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-3xl mx-auto mb-6">
         {branchCards.map((card, i) => (
           <motion.div
@@ -196,7 +175,7 @@ const InterpretDisplay = ({
         )}
       </AnimatePresence>
 
-      {/* ── صورة بلاغية وأثر البحر (deep فقط، بدون keyWord) ── */}
+      {/* ── صورة بلاغية وأثر البحر (deep فقط) ── */}
       <AnimatePresence>
         {isDeep && (r.imagery || r.meterEffect) && (
           <motion.div
@@ -220,7 +199,7 @@ const InterpretDisplay = ({
         )}
       </AnimatePresence>
 
-      {/* ── زر توضيح أعمق بعلامة + ── */}
+      {/* ── زر توضيح أعمق ── */}
       {!isDeep && (
         <div className="flex justify-center mb-4">
           <Button
@@ -260,7 +239,6 @@ const PoetryInterpretation = () => {
     }
   }, [activeId]);
 
-  // ── تفسير جديد ────────────────────────────────────────────
   const handleInterpret = async () => {
     if (!input.trim()) return;
     setIsLoading(true);
@@ -279,7 +257,6 @@ const PoetryInterpretation = () => {
       setActiveId(entry.id);
       setInput("");
     } catch (error) {
-      // رسالة تظهر تحت الزر مباشرة
       const msg = error instanceof APIError
         ? error.message
         : "تعذّر تحليل الأبيات حالياً. حاول مرة أخرى.";
@@ -289,17 +266,13 @@ const PoetryInterpretation = () => {
     }
   };
 
-  // ── توضيح أعمق ────────────────────────────────────────────
   const handleDeep = async () => {
     if (!active) return;
     setIsDeepLoading(true);
     try {
       const data = await interpretVerse(active.verse, "deep");
       setEntries(prev =>
-        prev.map(e => e.id === active.id
-          ? { ...e, result: data }
-          : e
-        )
+        prev.map(e => e.id === active.id ? { ...e, result: data } : e)
       );
     } catch (error) {
       const msg = error instanceof APIError ? error.message : "تعذّر التعمق حالياً.";
@@ -315,14 +288,12 @@ const PoetryInterpretation = () => {
         <ArabicLettersBg letters={["ت", "ف", "س", "ي", "ر"]} count={18} opacity={0.06} />
         <div className="max-w-5xl mx-auto relative z-10">
 
-          {/* Header */}
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-10">
             <MessageSquareText className="h-10 w-10 text-brown-600 mx-auto mb-4" />
             <h2 className="font-display text-3xl text-gradient-brown mb-2">تفسير الأبيات الشعرية</h2>
             <p className="font-kufi text-brown-600">أدخل بيتاً شعرياً واحصل على شرح مبسّط وواضح</p>
           </motion.div>
 
-          {/* الإدخال */}
           <div className="max-w-2xl mx-auto mb-12">
             <div className="glass-card-warm p-6">
               <Textarea
@@ -340,7 +311,6 @@ const PoetryInterpretation = () => {
                 {isLoading ? "جارٍ التفسير..." : "فسّر الأبيات الشعرية"}
               </Button>
 
-              {/* ── رسالة الخطأ تحت الزر مباشرة ── */}
               <AnimatePresence>
                 {inlineError && (
                   <motion.p
@@ -356,7 +326,6 @@ const PoetryInterpretation = () => {
             </div>
           </div>
 
-          {/* سجل التفسيرات */}
           {entries.length > 0 && (
             <div className="max-w-3xl mx-auto mb-8">
               <h3 className="font-kufi text-sm text-brown-700 mb-3 text-center">سجل التفسيرات</h3>
@@ -375,7 +344,6 @@ const PoetryInterpretation = () => {
             </div>
           )}
 
-          {/* النتائج */}
           <div ref={resultsRef} />
           {active && (
             <InterpretDisplay
