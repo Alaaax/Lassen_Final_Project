@@ -2,7 +2,7 @@
 // src/services/api.ts
 // =============================================================
 
-const BASE = "https://lassen-final-project-occu.onrender.com";
+const BASE = "https://lassen-final-project-1.onrender.com";
 export class APIError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
