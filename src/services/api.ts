@@ -1,9 +1,8 @@
 // =============================================================
 // src/services/api.ts
 // =============================================================
-
-const BASE = (import.meta.env.VITE_API_URL as string) || "http://localhost:8000";
-
+const RAW_BASE = (import.meta.env.VITE_API_URL as string) || "http://localhost:8000";
+const BASE = RAW_BASE.replace(/\/+$/, "");
 export class APIError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
