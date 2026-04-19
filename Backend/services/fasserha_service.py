@@ -1,5 +1,5 @@
 """
-خدمة ميزة "فسرها لي" — محدّثة لدعم depth و JSON منظّم
+خدمة ميزة "فسرها لي" — نسخة مقاومة لانهيار الخادم.
 """
 
 from __future__ import annotations
@@ -17,104 +17,140 @@ from typing import Any
 import numpy as np
 import torch
 from dotenv import load_dotenv
-from huggingface_hub import hf_hub_download
 from openai import OpenAI
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-from Fasserha_prompts import FASSERHA_SYSTEM_PROMPT, build_user_prompt
+from Fasserha_prompts import FASSERHA_SYSTEM_PROMPT, FASSERHA_USER_PROMPT
 
 load_dotenv()
 
-ARABIC_DIACRITICS = re.compile(r"[\u0617-\u061A\u064B-\u0652\u0670\u06D6-\u06DC]")
+
+ARABIC_DIACRITICS = re.compile(r"[\u0617-\u061A\u064B-\u0652\u0670\u06D6-\u06ED]")
 
 METER_LABELS = [
-    "saree", "kamel", "mutakareb", "mutadarak", "munsareh",
-    "madeed", "mujtath", "ramal", "baseet", "khafeef",
-    "taweel", "wafer", "hazaj", "rajaz",
+    "saree",
+    "kamel",
+    "mutakareb",
+    "mutadarak",
+    "munsareh",
+    "madeed",
+    "mujtath",
+    "ramal",
+    "baseet",
+    "khafeef",
+    "taweel",
+    "wafer",
+    "hazaj",
+    "rajaz",
 ]
 
 METER_ARABIC = {
-    "saree": "السريع", "kamel": "الكامل", "mutakareb": "المتقارب",
-    "mutadarak": "المتدارك", "munsareh": "المنسرح", "madeed": "المديد",
-    "mujtath": "المجتث", "ramal": "الرمل", "baseet": "البسيط",
-    "khafeef": "الخفيف", "taweel": "الطويل", "wafer": "الوافر",
-    "hazaj": "الهزج", "rajaz": "الرجز",
+    "saree": "السريع",
+    "kamel": "الكامل",
+    "mutakareb": "المتقارب",
+    "mutadarak": "المتدارك",
+    "munsareh": "المنسرح",
+    "madeed": "المديد",
+    "mujtath": "المجتث",
+    "ramal": "الرمل",
+    "baseet": "البسيط",
+    "khafeef": "الخفيف",
+    "taweel": "الطويل",
+    "wafer": "الوافر",
+    "hazaj": "الهزج",
+    "rajaz": "الرجز",
 }
 
 TOPIC_AR = {
     "غزل_رومانسي": "غزل ورومانسية",
-    "هجاء_ذم":     "هجاء وذم",
-    "وجداني":      "عاطفة وحنين",
-    "مدح":         "مدح وإطراء",
-    "رثاء":        "رثاء وحزن",
-    "دينية":       "شعر ديني",
-    "وطنية":       "شعر وطني",
+    "هجاء_ذم": "هجاء وذم",
+    "وجداني": "عاطفة وحنين",
+    "مدح": "مدح وإطراء",
+    "رثاء": "رثاء وحزن",
+    "دينية": "شعر ديني",
+    "وطنية": "شعر وطني",
 }
 
 
-def _model_device(model) -> torch.device:
+def _device() -> torch.device:
+    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+def _model_device(model: Any) -> torch.device:
     for p in model.parameters():
         if not getattr(p, "is_meta", False):
             return p.device
     return torch.device("cpu")
 
-def _get_env_required(key: str) -> str:
-    value = os.getenv(key)
+
+def _get_env_path(primary_key: str, fallback_key: str | None = None) -> str:
+    value = os.getenv(primary_key) or (os.getenv(fallback_key) if fallback_key else None)
     if not value:
-        raise RuntimeError(f"المتغير '{key}' غير موجود في .env")
+        raise RuntimeError(f"المتغير '{primary_key}' غير موجود في .env")
     return value.strip()
 
-def _hf_token() -> str | None:
-    token = os.getenv("HF_TOKEN")
-    return token.strip() if token else None
 
-def _is_local_path(path_or_repo: str) -> bool:
-    return Path(path_or_repo).exists()
+def _available_memory_mb() -> float | None:
+    try:
+        with open("/proc/meminfo", "r", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("MemAvailable:"):
+                    kb = float(line.split()[1])
+                    return kb / 1024.0
+    except Exception:
+        return None
+    return None
 
-def _load_hf_or_local_assets(path_or_repo: str):
-    token = _hf_token()
-    common_kwargs = {"low_cpu_mem_usage": False}
-    if _is_local_path(path_or_repo):
-        tokenizer = AutoTokenizer.from_pretrained(path_or_repo)
-        model = AutoModelForSequenceClassification.from_pretrained(path_or_repo, **common_kwargs)
-    else:
-        tokenizer = AutoTokenizer.from_pretrained(path_or_repo, token=token)
-        model = AutoModelForSequenceClassification.from_pretrained(path_or_repo, token=token, **common_kwargs)
-    model.eval()
-    return tokenizer, model
 
-def _resolve_labels_file(topic_model_path_or_repo: str, labels_ref: str) -> str:
-    labels_ref = labels_ref.strip()
-    if Path(labels_ref).is_file():
-        return labels_ref
-    if _is_local_path(topic_model_path_or_repo):
-        local_candidate = Path(topic_model_path_or_repo) / labels_ref
-        if local_candidate.is_file():
-            return str(local_candidate)
-    token = _hf_token()
-    return hf_hub_download(repo_id=topic_model_path_or_repo, filename=labels_ref, repo_type="model", token=token)
+def _should_disable_classifiers() -> bool:
+    if os.getenv("FASSERHA_DISABLE_CLASSIFIERS", "0").strip() == "1":
+        return True
+    available_mb = _available_memory_mb()
+    min_needed_mb = float(os.getenv("FASSERHA_MIN_MEMORY_MB", "3500"))
+    return available_mb is not None and available_mb < min_needed_mb
+
 
 @lru_cache(maxsize=1)
 def _get_meter_assets():
-    return _load_hf_or_local_assets(_get_env_required("FASSERHA_METER_MODEL_PATH"))
+    model_path = _get_env_path("FASSERHA_METER_MODEL_PATH")
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    model = AutoModelForSequenceClassification.from_pretrained(model_path)
+    model.to(_device())
+    model.eval()
+    return tokenizer, model
+
 
 @lru_cache(maxsize=1)
 def _get_era_assets():
-    return _load_hf_or_local_assets(_get_env_required("FASSERHA_ERA_MODEL_PATH"))
+    model_path = _get_env_path("FASSERHA_ERA_MODEL_PATH")
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    model = AutoModelForSequenceClassification.from_pretrained(model_path)
+    model.to(_device())
+    model.eval()
+    return tokenizer, model
+
 
 @lru_cache(maxsize=1)
 def _get_topic_assets():
-    model_path = _get_env_required("FASSERHA_TOPIC_MODEL_PATH")
-    labels_ref = _get_env_required("FASSERHA_TOPIC_LABELS_PATH")
-    tokenizer, model = _load_hf_or_local_assets(model_path)
-    labels_file = _resolve_labels_file(model_path, labels_ref)
-    with open(labels_file, "rb") as f:
+    model_path = _get_env_path("FASSERHA_TOPIC_MODEL_PATH")
+    labels_path = _get_env_path("FASSERHA_TOPIC_LABELS_PATH")
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    model = AutoModelForSequenceClassification.from_pretrained(model_path)
+    model.to(_device())
+    model.eval()
+
+    with open(labels_path, "rb") as f:
         label_info = pickle.load(f)
-    return tokenizer, model, label_info["id2label"]
+    id2label = label_info["id2label"]
+    return tokenizer, model, id2label
+
 
 @lru_cache(maxsize=1)
 def _get_openai_client() -> OpenAI:
-    return OpenAI(api_key=_get_env_required("OPENAI_API_KEY"))
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY غير موجود في .env")
+    return OpenAI(api_key=api_key)
 
 
 def clean_arabic(text: str) -> str:
@@ -128,11 +164,27 @@ def clean_arabic(text: str) -> str:
     text = text.replace("\u0629", "\u0647")
     text = re.sub(r"[0-9\u0660-\u0669]", " ", text)
     text = re.sub(r"[^\u0600-\u06FF\s]", " ", text)
-    return re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
 
 
-def _topic_to_ar(label: str) -> str:
-    return TOPIC_AR.get(label, label)
+def _default_meter() -> dict[str, Any]:
+    return {"meter_ar": "غير محدد", "meter_en": "unknown", "confidence": 0.0}
+
+
+def _default_era() -> dict[str, Any]:
+    return {"era": "غير محدد", "classical_probability": 0.0, "modern_probability": 0.0}
+
+
+def _default_topic() -> dict[str, Any]:
+    return {"topic": "غير محدد", "confidence": 0.0, "top3": []}
+
+
+def _safe_predict(fn, poem_text: str, fallback: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return fn(poem_text)
+    except Exception:
+        return fallback
 
 
 def predict_meter(poem_text: str) -> dict[str, Any]:
@@ -140,185 +192,224 @@ def predict_meter(poem_text: str) -> dict[str, Any]:
     verses = [v.replace("#", " ").strip() for v in poem_text.strip().split("\n") if v.strip()]
     if not verses:
         raise ValueError("النص الشعري فارغ")
-    predictions: list[tuple[str, float]] = []
+
+    predictions = []
+    model_dev = _model_device(model)
+    max_len = int(getattr(model.config, "max_position_embeddings", 32))
+    max_len = max(16, min(max_len, 128))
+
     for verse in verses:
-        seq_len = int(getattr(model.config, "max_position_embeddings", 32))
-        inputs = tokenizer(verse, return_tensors="pt", truncation=True, max_length=seq_len, padding="max_length")
-        model_dev = _model_device(model)
+        inputs = tokenizer(
+            verse,
+            return_tensors="pt",
+            truncation=True,
+            max_length=max_len,
+            padding="max_length",
+        )
         inputs = {k: v.to(model_dev) for k, v in inputs.items()}
         with torch.no_grad():
             probs = torch.softmax(model(**inputs).logits, dim=-1)[0]
         pred_id = int(torch.argmax(probs).item())
-        predictions.append((METER_LABELS[pred_id], float(probs[pred_id].item())))
-    top_meter = Counter([m for m, _ in predictions]).most_common(1)[0][0]
+        confidence = float(probs[pred_id].item())
+        predictions.append((METER_LABELS[pred_id], confidence))
+
+    top_meter = Counter([p[0] for p in predictions]).most_common(1)[0][0]
     avg_conf = sum(c for _, c in predictions) / len(predictions)
-    return {"meter_ar": METER_ARABIC.get(top_meter, top_meter), "meter_en": top_meter, "confidence": round(avg_conf, 3)}
+    return {
+        "meter_ar": METER_ARABIC.get(top_meter, top_meter),
+        "meter_en": top_meter,
+        "confidence": round(avg_conf, 3),
+    }
 
 
 def predict_era(poem_text: str) -> dict[str, Any]:
     tokenizer, model = _get_era_assets()
     cleaned = clean_arabic(poem_text)
     if not cleaned:
-        raise ValueError("النص غير صالح للتحليل")
-    encoded = tokenizer(cleaned, padding="max_length", truncation=True, max_length=256, return_tensors="pt")
+        raise ValueError("النص غير صالح للتحليل بعد التنظيف")
+
+    encoded = tokenizer(
+        cleaned,
+        padding="max_length",
+        truncation=True,
+        max_length=256,
+        return_tensors="pt",
+    )
     model_dev = _model_device(model)
     encoded = {k: v.to(model_dev) for k, v in encoded.items()}
     with torch.no_grad():
         probs = torch.softmax(model(**encoded).logits, dim=-1).cpu().numpy()[0]
+
     label_names = ["قديم", "حديث"]
     pred_idx = int(np.argmax(probs))
-    return {"era": label_names[pred_idx], "classical_probability": round(float(probs[0]), 4), "modern_probability": round(float(probs[1]), 4)}
+    return {
+        "era": label_names[pred_idx],
+        "classical_probability": round(float(probs[0]), 4),
+        "modern_probability": round(float(probs[1]), 4),
+    }
 
 
 def predict_topic(poem_text: str) -> dict[str, Any]:
     tokenizer, model, id2label_topic = _get_topic_assets()
     cleaned = clean_arabic(poem_text)
     if not cleaned:
-        raise ValueError("النص غير صالح للتحليل")
-    inputs = tokenizer(cleaned, truncation=True, max_length=512, return_tensors="pt", padding=True)
+        raise ValueError("النص غير صالح للتحليل بعد التنظيف")
+
+    inputs = tokenizer(
+        cleaned,
+        truncation=True,
+        max_length=512,
+        return_tensors="pt",
+        padding=True,
+    )
     model_dev = _model_device(model)
     inputs = {k: v.to(model_dev) for k, v in inputs.items()}
     with torch.no_grad():
         probs = torch.softmax(model(**inputs).logits, dim=-1)[0].cpu().numpy()
     top3 = np.argsort(probs)[::-1][:3]
-    top_label_raw = id2label_topic[int(top3[0])]
+
     return {
-        "topic":      _topic_to_ar(top_label_raw),
-        "topic_raw":  top_label_raw,
+        "topic": id2label_topic[int(top3[0])],
         "confidence": round(float(probs[top3[0]]), 3),
-        "top3":       [{"label": _topic_to_ar(id2label_topic[int(i)]), "prob": round(float(probs[i]), 3)} for i in top3],
+        "top3": [
+            {"label": id2label_topic[int(i)], "prob": round(float(probs[i]), 3)}
+            for i in top3
+        ],
     }
 
 
+def _build_user_prompt(poem_text: str, meter_name: str, era_name: str, topic_name: str, depth: str) -> str:
+    detail_line = "مستوى التفصيل المطلوب: شرح مختصر." if depth == "brief" else "مستوى التفصيل المطلوب: شرح عميق."
+    return (
+        FASSERHA_USER_PROMPT.format(
+            poem_text=poem_text,
+            meter_name=meter_name,
+            era_name=era_name,
+            topic_name=topic_name,
+        )
+        + "\n\n"
+        + detail_line
+        + "\nأرجع JSON فقط بهذا الشكل: "
+        + '{"status":"ok","depth":"brief|deep","summary":"...","explanation":"...","verses_breakdown":[{"verse":"...","meaning":"..."}],"imagery":"...","meter_effect":"...","mood":"..."}'
+    )
+
+
 def _count_verses(poem_text: str) -> int:
-    """يحسب عدد الأبيات تقريباً."""
     lines = [l.strip() for l in poem_text.strip().split("\n") if l.strip()]
     return max(1, len(lines))
 
 
 def _calc_max_tokens(depth: str, verses_count: int) -> int:
-    """يحسب الـ max_tokens حسب العمق وعدد الأبيات."""
     if depth == "brief":
         return 600
-    # deep: 150 توكن لكل بيت + 800 للـ JSON structure
-    return min(800 + (verses_count * 150), 4096)
+    return min(800 + (verses_count * 140), 3000)
 
 
 def _safe_parse_json(raw: str, depth: str) -> dict[str, Any]:
-    """يحاول يحلل الـ JSON — إذا فشل يرجع fallback نظيف."""
     fallback = {
-        "status": "ok", "depth": depth, "summary": "",
-        "explanation": "تعذّر استكمال التفسير — حاول مرة أخرى أو اضغط توضيح أعمق.",
-        "verses_breakdown": [], "imagery": "", "meter_effect": "", "mood": "",
+        "status": "ok",
+        "depth": depth,
+        "summary": "",
+        "explanation": raw or "تعذّر استكمال التفسير.",
+        "verses_breakdown": [],
+        "imagery": "",
+        "meter_effect": "",
+        "mood": "",
     }
-
     if not raw:
         return fallback
-
     try:
-        return json.loads(raw)
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            return parsed
+        return fallback
     except json.JSONDecodeError:
-        pass
-
-    # محاولة استخراج جزئي إذا JSON مقطوع
-    try:
-        result = dict(fallback)
-        m = re.search(r'"summary"\s*:\s*"([^"]+)"', raw)
-        if m:
-            result["summary"] = m.group(1)
-        m2 = re.search(r'"explanation"\s*:\s*"([^"]+)"', raw)
-        if m2:
-            result["explanation"] = m2.group(1)
-        return result
-    except Exception:
         return fallback
 
 
 def _generate_explanation(
-    poem_text:  str,
+    poem_text: str,
     meter_name: str,
-    era_name:   str,
+    era_name: str,
     topic_name: str,
-    depth:      str = "brief",
+    depth: str = "brief",
 ) -> dict[str, Any]:
-    user_prompt  = build_user_prompt(poem_text, meter_name, era_name, topic_name, depth)
-    model_name   = os.getenv("FASSERHA_LLM_MODEL", "gpt-4o").strip()
-    verses_count = _count_verses(poem_text)
-    max_tokens   = _calc_max_tokens(depth, verses_count)
-
+    user_prompt = _build_user_prompt(poem_text, meter_name, era_name, topic_name, depth)
+    model_name = os.getenv("FASSERHA_LLM_MODEL", "gpt-4o")
     response = _get_openai_client().chat.completions.create(
         model=model_name,
-        max_tokens=max_tokens,
-        temperature=0.4,
+        max_tokens=_calc_max_tokens(depth, _count_verses(poem_text)),
+        temperature=0.5,
         response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": FASSERHA_SYSTEM_PROMPT},
-            {"role": "user",   "content": user_prompt},
+            {"role": "user", "content": user_prompt},
         ],
     )
-
     raw = (response.choices[0].message.content or "").strip()
     return _safe_parse_json(raw, depth)
 
 
 def fasserha_li(poem_text: str, depth: str = "brief") -> dict[str, Any]:
-    meter_result = predict_meter(poem_text)
-    era_result   = predict_era(poem_text)
-    topic_result = predict_topic(poem_text)
+    if _should_disable_classifiers():
+        meter_result = _default_meter()
+        era_result = _default_era()
+        topic_result = _default_topic()
+    else:
+        meter_result = _safe_predict(predict_meter, poem_text, _default_meter())
+        era_result = _safe_predict(predict_era, poem_text, _default_era())
+        topic_result = _safe_predict(predict_topic, poem_text, _default_topic())
 
-    gpt_result = _generate_explanation(
-        poem_text  = poem_text,
-        meter_name = meter_result["meter_ar"],
-        era_name   = era_result["era"],
-        topic_name = topic_result["topic"],
-        depth      = depth,
-    )
+    meter_name = meter_result["meter_ar"]
+    era_name = era_result["era"]
+    topic_name = TOPIC_AR.get(topic_result["topic"], topic_result["topic"])
+    gpt = _generate_explanation(poem_text, meter_name, era_name, topic_name, depth)
 
     return {
-        "poem":  poem_text,
+        "poem": poem_text,
         "meter": meter_result,
-        "era":   era_result,
-        "topic": topic_result,
-        "gpt":   gpt_result,
+        "era": era_result,
+        "topic": {**topic_result, "topic": topic_name},
+        "gpt": gpt,
     }
 
 
 def fasserha_api_response(poem_text: str, depth: str = "brief") -> dict[str, Any]:
     result = fasserha_li(poem_text, depth)
-    gpt    = result["gpt"]
+    gpt = result["gpt"]
 
     if gpt.get("status") == "error":
         return {
-            "success":    False,
+            "success": False,
             "error_type": gpt.get("error_type", "unknown"),
-            "message":    gpt.get("message", "تعذّر التفسير"),
+            "message": gpt.get("message", "تعذّر التفسير"),
         }
 
     return {
         "success": True,
         "data": {
             "meter": {
-                "arabic":     result["meter"]["meter_ar"],
-                "english":    result["meter"]["meter_en"],
+                "arabic": result["meter"]["meter_ar"],
+                "english": result["meter"]["meter_en"],
                 "confidence": result["meter"]["confidence"],
             },
             "era": {
-                "label":          result["era"]["era"],
+                "label": result["era"]["era"],
                 "classical_prob": result["era"]["classical_probability"],
-                "modern_prob":    result["era"]["modern_probability"],
+                "modern_prob": result["era"]["modern_probability"],
             },
             "topic": {
-                "label":      result["topic"]["topic"],
+                "label": result["topic"]["topic"],
                 "confidence": result["topic"]["confidence"],
-                "top3":       result["topic"]["top3"],
+                "top3": result["topic"]["top3"],
             },
-            "depth":            gpt.get("depth", depth),
-            "summary":          gpt.get("summary", ""),
-            "explanation":      gpt.get("explanation", ""),
+            "depth": gpt.get("depth", depth),
+            "summary": gpt.get("summary", ""),
+            "explanation": gpt.get("explanation", ""),
             "verses_breakdown": gpt.get("verses_breakdown", []),
-            "imagery":          gpt.get("imagery", ""),
-            "meter_effect":     gpt.get("meter_effect", ""),
-            "key_word":         "",   # محذوف من العرض لكن نبقيه فارغاً للتوافق
-            "mood":             gpt.get("mood", ""),
+            "imagery": gpt.get("imagery", ""),
+            "meter_effect": gpt.get("meter_effect", ""),
+            "key_word": "",
+            "mood": gpt.get("mood", ""),
         },
     }
