@@ -19,11 +19,10 @@ import { APIError, generateVerse } from "@/services/api";
 
 // === نقاط ربط النماذج (لا تغيّر بنية التواقيع) ================
 async function generatePoetry(idea: string): Promise<string> {
-  const response = await generateVerse({
-    idea,
-    meter_num: 1, // حاليًا نبدأ بالبحر الافتراضي (الطويل)
-    num_verses: 4,
-  });
+  const response = await generateVerse(idea, 1, 4);
+
+  
+
 
   if (!response.success) {
     throw new Error(response.message || "تعذّر توليد الأبيات.");
