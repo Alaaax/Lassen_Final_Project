@@ -2,7 +2,7 @@
 // src/services/api.ts
 // =============================================================
 
-const BASE = ((import.meta.env.VITE_API_URL as string) || "http://localhost:8000").replace(/\/+$/, "");
+const BASE = "https://lassen-final-project-occu.onrender.com";
 export class APIError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
