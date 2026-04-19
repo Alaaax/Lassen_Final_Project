@@ -43,9 +43,13 @@ async function completePoem(partial: string): Promise<string> {
     throw new Error(response.message || "تعذّر إكمال البيت.");
   }
 
+  if (response.found === false) {
+    throw new Error(response.message || "هذا البيت غير موجود في قاعدة البيانات.");
+  }
+
   const verses = response.poem_verses || [];
   if (verses.length === 0) {
-    throw new Error("تم العثور على البيت لكن لم نتمكن من عرض القصيدة.");
+    throw new Error(response.message || "تم العثور على البيت لكن لم نتمكن من عرض القصيدة.");
   }
 
   const meta = response.meta;

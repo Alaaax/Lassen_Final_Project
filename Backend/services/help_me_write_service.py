@@ -21,6 +21,7 @@ from HelpMeWrite_prompts import (
     HELP_WRITE_GENERATE_USER_PROMPT,
 )
 
+
 load_dotenv()
 
 METERS = [
@@ -80,7 +81,7 @@ MIN_ARABIC_CHARS = 3
 
 EMBED_MODEL = os.getenv("WRITE_COMPLETE_EMBED_MODEL", "text-embedding-3-large")
 EMBED_DIM = int(os.getenv("WRITE_COMPLETE_EMBED_DIM", "768"))
-MATCH_THRESHOLD = float(os.getenv("WRITE_COMPLETE_MATCH_THRESHOLD", "0.92"))
+MATCH_THRESHOLD = float(os.getenv("WRITE_COMPLETE_MATCH_THRESHOLD", "0.89"))
 
 RPC_MATCH_VERSES = os.getenv("WRITE_COMPLETE_RPC_MATCH", "match_verses")
 RPC_GET_FULL_POEM = os.getenv("WRITE_COMPLETE_RPC_FULL_POEM", "get_full_poem")
@@ -90,6 +91,7 @@ COL_POEM_ID = os.getenv("WRITE_COMPLETE_COL_POEM_ID", "poem_id")
 COL_POET = os.getenv("WRITE_COMPLETE_COL_POET", "poet_name")
 COL_METER = os.getenv("WRITE_COMPLETE_COL_METER", "poem_meter")
 COL_ERA = os.getenv("WRITE_COMPLETE_COL_ERA", "era")
+
 
 
 @lru_cache(maxsize=1)
