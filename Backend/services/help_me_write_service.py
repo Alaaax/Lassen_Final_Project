@@ -21,7 +21,6 @@ from HelpMeWrite_prompts import (
     HELP_WRITE_GENERATE_USER_PROMPT,
 )
 
-
 load_dotenv()
 
 METERS = [
@@ -81,7 +80,7 @@ MIN_ARABIC_CHARS = 3
 
 EMBED_MODEL = os.getenv("WRITE_COMPLETE_EMBED_MODEL", "text-embedding-3-large")
 EMBED_DIM = int(os.getenv("WRITE_COMPLETE_EMBED_DIM", "768"))
-MATCH_THRESHOLD = float(os.getenv("WRITE_COMPLETE_MATCH_THRESHOLD", "0.89"))
+MATCH_THRESHOLD = float(os.getenv("WRITE_COMPLETE_MATCH_THRESHOLD", "0.87"))
 
 RPC_MATCH_VERSES = os.getenv("WRITE_COMPLETE_RPC_MATCH", "match_verses")
 RPC_GET_FULL_POEM = os.getenv("WRITE_COMPLETE_RPC_FULL_POEM", "get_full_poem")
@@ -91,7 +90,6 @@ COL_POEM_ID = os.getenv("WRITE_COMPLETE_COL_POEM_ID", "poem_id")
 COL_POET = os.getenv("WRITE_COMPLETE_COL_POET", "poet_name")
 COL_METER = os.getenv("WRITE_COMPLETE_COL_METER", "poem_meter")
 COL_ERA = os.getenv("WRITE_COMPLETE_COL_ERA", "era")
-
 
 
 @lru_cache(maxsize=1)
@@ -109,6 +107,13 @@ def _get_supabase_client() -> Client:
 
 def strip_diacritics(text: str) -> str:
     return ARABIC_DIACRITICS.sub("", (text or "")).strip()
+
+
+def _safe_text(value: Any, default: str) -> str:
+    if value is None:
+        return default
+    text = str(value).strip()
+    return text if text else default
 
 
 def validate_complete_input(text: str) -> tuple[bool, str]:
@@ -154,16 +159,20 @@ def find_verse_in_db(verse: str) -> dict[str, Any] | None:
         return None
 
     top_result = response.data[0]
-    similarity = float(top_result.get("similarity", 0))
+    similarity_raw = top_result.get("similarity", 0)
+    try:
+        similarity = float(similarity_raw or 0)
+    except (TypeError, ValueError):
+        similarity = 0.0
     if similarity < MATCH_THRESHOLD:
         return None
 
     return {
-        "verse": top_result.get(COL_VERSE_DISPLAY, ""),
+        "verse": _safe_text(top_result.get(COL_VERSE_DISPLAY), ""),
         "poem_id": top_result.get(COL_POEM_ID),
-        "poet": top_result.get(COL_POET, "مجهول"),
-        "meter": top_result.get(COL_METER, "-"),
-        "era": top_result.get(COL_ERA, "-"),
+        "poet": _safe_text(top_result.get(COL_POET), "مجهول"),
+        "meter": _safe_text(top_result.get(COL_METER), "-"),
+        "era": _safe_text(top_result.get(COL_ERA), "-"),
         "similarity": round(similarity, 4),
     }
 

@@ -272,11 +272,20 @@ async def complete_write_poetry(req: WriteCompleteRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"خطأ إكمال الأبيات: {str(e)}")
 
+    meta_payload = payload.get("meta") or {}
+    if isinstance(meta_payload, dict):
+        meta_payload = {
+            "poet": meta_payload.get("poet") or "مجهول",
+            "meter": meta_payload.get("meter") or "-",
+            "era": meta_payload.get("era") or "-",
+            "similarity": float(meta_payload.get("similarity") or 0.0),
+        }
+
     return WriteCompleteResponse(
         success=bool(payload.get("success", False)),
         found=bool(payload.get("found", False)),
         poem_verses=payload.get("poem_verses", []),
-        meta=payload.get("meta"),
+        meta=meta_payload if meta_payload else None,
         message=payload.get("message"),
     )
 
