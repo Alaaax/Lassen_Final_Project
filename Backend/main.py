@@ -17,6 +17,7 @@ from schemas import (
     JourneyRequest, JourneyResponse, JourneyEraPoem, JourneySummary,
     InterpretRequest, InterpretResponse,
     WriteGenerateRequest, WriteGenerateResponse,
+    WriteCompleteRequest, WriteCompleteResponse,
 )
 
 # دعم التشغيل لثلاث هيكليات:
@@ -30,7 +31,7 @@ try:
     from services.poetry_retriever import get_poems_for_mood, get_db_stats
     from services.journey_service import build_time_journey
     from services.fasserha_service import fasserha_api_response
-    from services.help_me_write_service import generate_poetry_response
+    from services.help_me_write_service import generate_poetry_response, complete_poem_response
 except ModuleNotFoundError:
     try:
         from Backend.services.siwar_service import get_siwar_definition
@@ -39,7 +40,7 @@ except ModuleNotFoundError:
         from Backend.services.poetry_retriever import get_poems_for_mood, get_db_stats
         from Backend.services.journey_service import build_time_journey
         from Backend.services.fasserha_service import fasserha_api_response
-        from Backend.services.help_me_write_service import generate_poetry_response
+        from Backend.services.help_me_write_service import generate_poetry_response, complete_poem_response
     except ModuleNotFoundError:
         from siwar_service import get_siwar_definition
         from ai_service import explain_word, get_mood_response
@@ -47,7 +48,7 @@ except ModuleNotFoundError:
         from poetry_retriever import get_poems_for_mood, get_db_stats
         from journey_service import build_time_journey
         from fasserha_service import fasserha_api_response
-        from help_me_write_service import generate_poetry_response
+        from help_me_write_service import generate_poetry_response, complete_poem_response
 load_dotenv()
 
 app = FastAPI(title="بيت القصيد API", version="1.0.0")
@@ -252,6 +253,30 @@ async def generate_write_poetry(req: WriteGenerateRequest):
         meter=payload.get("meter"),
         meter_num=req.meter_num,
         verses=payload.get("verses", []),
+        message=payload.get("message"),
+    )
+
+
+# =============================================================
+# 🔌 ساعدني أكتب (إكمال القصيدة) — POST /api/write/complete
+# =============================================================
+
+@app.post("/api/write/complete", response_model=WriteCompleteResponse)
+async def complete_write_poetry(req: WriteCompleteRequest):
+    try:
+        payload = await asyncio.to_thread(complete_poem_response, req.partial_verse)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"خطأ إكمال الأبيات: {str(e)}")
+
+    return WriteCompleteResponse(
+        success=bool(payload.get("success", False)),
+        found=bool(payload.get("found", False)),
+        poem_verses=payload.get("poem_verses", []),
+        meta=payload.get("meta"),
         message=payload.get("message"),
     )
 

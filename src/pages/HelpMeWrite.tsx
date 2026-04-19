@@ -15,14 +15,15 @@ import ArabicLettersBg from "@/components/ArabicLettersBg";
 import OrnamentalDivider from "@/components/OrnamentalDivider";
 import PageNavButton from "@/components/PageNavButton";
 import { useHistory } from "@/contexts/HistoryContext";
-import { APIError, generateVerse } from "@/services/api";
+import { APIError, completeVerse, generateVerse } from "@/services/api";
 
 // === نقاط ربط النماذج (لا تغيّر بنية التواقيع) ================
 async function generatePoetry(idea: string): Promise<string> {
-  const response = await generateVerse(idea, 1, 4);
-
-  
-
+  const response = await generateVerse({
+    idea,
+    meter_num: 1, // حاليًا نبدأ بالبحر الافتراضي (الطويل)
+    num_verses: 4,
+  });
 
   if (!response.success) {
     throw new Error(response.message || "تعذّر توليد الأبيات.");
@@ -36,9 +37,23 @@ async function generatePoetry(idea: string): Promise<string> {
   const meterLine = response.meter ? `البحر: ${response.meter}\n\n` : "";
   return `${meterLine}${verses.join("\n")}`;
 }
-async function completeVerse(partial: string): Promise<string> {
-  await new Promise((r) => setTimeout(r, 1500));
-  return `البيت الكامل:\n\n"${partial}... فدعْهُ ولا تُكثِر عليه التأسُّفا"\n\n— هذا مثال توضيحي`;
+async function completePoem(partial: string): Promise<string> {
+  const response = await completeVerse(partial);
+  if (!response.success) {
+    throw new Error(response.message || "تعذّر إكمال البيت.");
+  }
+
+  const verses = response.poem_verses || [];
+  if (verses.length === 0) {
+    throw new Error("تم العثور على البيت لكن لم نتمكن من عرض القصيدة.");
+  }
+
+  const meta = response.meta;
+  const header = meta
+    ? `الشاعر: ${meta.poet || "مجهول"}\nالبحر: ${meta.meter || "-"}\nالعصر: ${meta.era || "-"}\n\n`
+    : "";
+  const poemLines = verses.map((v) => v.verse || "").filter(Boolean).join("\n");
+  return `${header}${poemLines}`.trim();
 }
 
 interface HistoryEntry {
@@ -175,6 +190,7 @@ const HelpMeWrite = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
+  const [completeError, setCompleteError] = useState<string | null>(null);
   const { addHistoryItem } = useHistory();
 
   const handleGenerate = async () => {
@@ -209,9 +225,10 @@ const HelpMeWrite = () => {
   const handleComplete = async () => {
     if (!completeInput.trim()) return;
     setIsCompleting(true);
+    setCompleteError(null);
     addHistoryItem("write", "ساعدني أكتب", completeInput);
     try {
-      const result = await completeVerse(completeInput);
+      const result = await completePoem(completeInput);
       const entry: HistoryEntry = {
         id: crypto.randomUUID(),
         title: summarize(completeInput),
@@ -221,6 +238,14 @@ const HelpMeWrite = () => {
       setCompleteHistory(prev => [entry, ...prev]);
       setCompleteActiveId(entry.id);
       setCompleteInput("");
+    } catch (error) {
+      const message =
+        error instanceof APIError
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : "تعذّر إكمال البيت حالياً. حاول مرة أخرى.";
+      setCompleteError(message);
     } finally {
       setIsCompleting(false);
     }
@@ -271,6 +296,11 @@ const HelpMeWrite = () => {
             </TabsContent>
 
             <TabsContent value="complete">
+              {completeError && (
+                <div className="max-w-2xl mx-auto mb-4 rounded-lg border border-red-300/40 bg-red-100/30 p-3">
+                  <p className="font-ui text-sm text-red-700">{completeError}</p>
+                </div>
+              )}
               <FeatureSection
                 label="اكتب بيتاً ناقصاً أو شطراً"
                 placeholder="مثال: إذا المرءُ لا يرعاكَ إلا تكلُّفاً..."

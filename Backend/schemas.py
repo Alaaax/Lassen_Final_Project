@@ -188,6 +188,31 @@ class WriteGenerateResponse(BaseModel):
     message: Optional[str] = None
 
 
+class WriteCompleteRequest(BaseModel):
+    partial_verse: str = Field(..., min_length=2, max_length=500)
+
+
+class CompletedPoemVerse(BaseModel):
+    verse_index: Optional[int] = None
+    verse: str
+    is_input_match: bool = False
+
+
+class WriteCompleteMeta(BaseModel):
+    poet: str = "مجهول"
+    meter: str = "-"
+    era: str = "-"
+    similarity: float = 0.0
+
+
+class WriteCompleteResponse(BaseModel):
+    success: bool
+    found: bool
+    poem_verses: list[CompletedPoemVerse] = []
+    meta: Optional[WriteCompleteMeta] = None
+    message: Optional[str] = None
+
+
 # ── TODO: باقي الصفحات ────────────────────────────────────────
 
 # # =============================================================
