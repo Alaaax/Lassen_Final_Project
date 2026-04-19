@@ -44,23 +44,35 @@ TARGET_ERAS = [
 ]
 
 THEME_MAP: dict[str, list[str]] = {
-    "غزل": ["قصيدة غزل", "قصيدة رومنسيه"],
-    "مدح": ["قصيدة مدح"],
-    "ذم": ["قصيدة ذم"],
+    "غزل": ["قصيدة غزل"],
+    "عتاب": ["قصيدة عتاب"],
+    "حزينه": ["قصيدة حزينه"],
     "هجاء": ["قصيدة هجاء"],
-    "حزن": ["قصيدة حزينه", "قصيدة رثاء", "قصيدة فراق"],
+    "شوق": ["قصيدة شوق"],
+    "فراق": ["قصيدة فراق"],
+    "مدح": ["قصيدة مدح"],
+    "رومنسيه": ["قصيدة رومنسيه"],
 }
 
 
 def _normalize_theme(theme: str) -> str:
     t = (theme or "").strip()
     alias = {
-        "الحزن": "حزن",
-        "حزين": "حزن",
+        "حزن": "حزينه",
+        "الحزن": "حزينه",
+        "حزين": "حزينه",
+        "الحزينه": "حزينه",
         "الغزل": "غزل",
+        "العتاب": "عتاب",
+        "عتب": "عتاب",
+        "المدح": "مدح",
         "المدح": "مدح",
         "الهجاء": "هجاء",
-        "الذم": "ذم",
+        "الشوق": "شوق",
+        "الفراق": "فراق",
+        "الرومنسية": "رومنسيه",
+        "الرومانسية": "رومنسيه",
+        "رومانسية": "رومنسيه",
     }
     return alias.get(t, t)
 
@@ -108,13 +120,34 @@ def _build_era_entry(poem_rows: list[dict[str, Any]], fallback_used: bool) -> di
     }
 
 
-def _pick_poem_for_era(era_label: str, theme_labels: list[str]) -> tuple[dict[str, Any] | None, bool]:
+def _pick_random_poem(
+    grouped_poems: dict[str, list[dict[str, Any]]],
+    excluded_poem_ids: set[str],
+) -> list[dict[str, Any]] | None:
+    if not grouped_poems:
+        return None
+
+    available_ids = [pid for pid in grouped_poems.keys() if pid not in excluded_poem_ids]
+    if not available_ids:
+        available_ids = list(grouped_poems.keys())
+
+    poem_id = random.choice(available_ids)
+    return grouped_poems[poem_id]
+
+
+def _pick_poem_for_era(
+    era_label: str,
+    theme_labels: list[str],
+    excluded_poem_ids: set[str] | None = None,
+) -> tuple[dict[str, Any] | None, bool]:
     """
     يحاول أولًا بعصر + موضوع.
     إذا لم يجد، يسقط شرط الموضوع ويجلب قصيدة من نفس العصر.
     """
     supabase = get_supabase_client()
     base_select = "poem_id, verse_index, verse, poem_title, poet_name, poet_era, poem_meter, poem_theme"
+
+    excluded_poem_ids = excluded_poem_ids or set()
 
     # 1) عصر + موضوع
     strict_rows = (
@@ -131,9 +164,8 @@ def _pick_poem_for_era(era_label: str, theme_labels: list[str]) -> tuple[dict[st
     )
 
     grouped_strict = _group_rows_by_poem(strict_rows)
-    if grouped_strict:
-        poem_id = random.choice(list(grouped_strict.keys()))
-        poem_rows = grouped_strict[poem_id]
+    poem_rows = _pick_random_poem(grouped_strict, excluded_poem_ids)
+    if poem_rows:
         return _build_era_entry(poem_rows, fallback_used=False), False
 
     # 2) fallback: عصر فقط
@@ -150,9 +182,8 @@ def _pick_poem_for_era(era_label: str, theme_labels: list[str]) -> tuple[dict[st
     )
 
     grouped_fallback = _group_rows_by_poem(fallback_rows)
-    if grouped_fallback:
-        poem_id = random.choice(list(grouped_fallback.keys()))
-        poem_rows = grouped_fallback[poem_id]
+    poem_rows = _pick_random_poem(grouped_fallback, excluded_poem_ids)
+    if poem_rows:
         return _build_era_entry(poem_rows, fallback_used=True), True
 
     return None, False
@@ -207,17 +238,19 @@ async def _analyze_journey(theme: str, eras_payload: list[dict[str, Any]]) -> di
     return result
 
 
-async def build_time_journey(theme: str) -> dict[str, Any]:
+async def build_time_journey(theme: str, exclude_poem_ids: list[str] | None = None) -> dict[str, Any]:
     normalized_theme = _normalize_theme(theme)
     theme_labels = THEME_MAP.get(normalized_theme)
     if not theme_labels:
-        raise ValueError("الموضوع غير مدعوم. المواضيع المتاحة: غزل، مدح، ذم، هجاء، حزن.")
+        raise ValueError("الموضوع غير مدعوم. المواضيع المتاحة: غزل، عتاب، حزينه، هجاء، شوق، فراق، مدح، رومنسيه.")
+
+    excluded_poem_ids = {str(pid) for pid in (exclude_poem_ids or []) if str(pid).strip()}
 
     eras_result: list[dict[str, Any]] = []
     warnings: list[str] = []
 
     for era_key, era_label in TARGET_ERAS:
-        era_poem, used_fallback = _pick_poem_for_era(era_label, theme_labels)
+        era_poem, used_fallback = _pick_poem_for_era(era_label, theme_labels, excluded_poem_ids)
 
         if not era_poem:
             warnings.append(f"لم نجد قصيدة متاحة في {era_label}.")
@@ -261,3 +294,4 @@ async def build_time_journey(theme: str) -> dict[str, Any]:
         "summary": summary,
         "warnings": warnings,
     }
+    

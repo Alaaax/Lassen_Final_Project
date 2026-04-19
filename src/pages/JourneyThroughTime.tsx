@@ -2,29 +2,156 @@
  * صفحة رحلة عبر الزمن - Journey Through Time
  * رحلة تفاعلية: بداية -> الجاهلي -> العباسي -> الحديث -> خلاصة نهائية
  */
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, ArrowRight, Clock, Loader2, Sparkles } from "lucide-react";
+import { ArrowLeft, ArrowRight, Clock, Loader2, RefreshCcw, RotateCcw, Sparkles, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import PageLayout from "@/components/PageLayout";
 import ArabicLettersBg from "@/components/ArabicLettersBg";
 import OrnamentalDivider from "@/components/OrnamentalDivider";
 import PageNavButton from "@/components/PageNavButton";
 import { useHistory } from "@/contexts/HistoryContext";
-import { APIError, getTimeJourney, type JourneyResponse } from "@/services/api";
+import { APIError, getJourneyTTS, getTimeJourney, type JourneyEraPoem, type JourneyResponse } from "@/services/api";
 import { useToast } from "@/hooks/use-toast";
 
-const themes = ["غزل", "مدح", "ذم", "هجاء", "حزن"] as const;
+const themes = ["غزل", "عتاب", "حزينه", "هجاء", "شوق", "فراق", "مدح", "رومنسيه"] as const;
 
 const eraColors = ["bg-amber-500/20", "bg-emerald-500/20", "bg-rose-500/20"];
+const eraGlowClasses = [
+  "from-amber-500/20 via-amber-400/5 to-transparent",
+  "from-emerald-500/20 via-emerald-400/5 to-transparent",
+  "from-rose-500/20 via-rose-400/5 to-transparent",
+];
+
+const MAX_NARRATION_CHARS = 1700;
+
+const clampNarration = (text: string) => {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  return normalized.length > MAX_NARRATION_CHARS
+    ? `${normalized.slice(0, MAX_NARRATION_CHARS - 1)}…`
+    : normalized;
+};
+
+const buildIntroNarration = (theme: string) =>
+  clampNarration(
+    `تأهّب... الآن نفتح بوابة الزمن، ونرافق الشعراء عبر العصور، لنرى كيف تجلّى موضوع ${theme} في لغتهم وصورهم.`
+  );
+
+const buildEraNarration = (era: JourneyEraPoem) => {
+  const poetName = era.poet_name?.trim() || "شاعر من هذا العصر";
+  const verses = era.verses.slice(0, 4).join(" ... ");
+  return clampNarration(`وصلنا إلى ${era.era_label}. أنصت الآن لصوت ${poetName}. ${verses}`);
+};
+
+const getSceneNarration = (journeyData: JourneyResponse | null, currentStep: number, selectedTheme: string) => {
+  if (!journeyData || !selectedTheme) return "";
+  if (currentStep === 0) return buildIntroNarration(selectedTheme);
+  if (currentStep >= 1 && currentStep <= journeyData.eras.length) {
+    return buildEraNarration(journeyData.eras[currentStep - 1]);
+  }
+  return "";
+};
+
+const base64ToBlob = (b64Data: string, mimeType: string) => {
+  const byteCharacters = atob(b64Data);
+  const buffer = new ArrayBuffer(byteCharacters.length);
+  const bytes = new Uint8Array(buffer);
+
+  for (let i = 0; i < byteCharacters.length; i += 1) {
+    bytes[i] = byteCharacters.charCodeAt(i);
+  }
+
+  return new Blob([buffer], { type: mimeType || "audio/mpeg" });
+};
 
 const JourneyThroughTime = () => {
   const [selectedTheme, setSelectedTheme] = useState("");
   const [journeyData, setJourneyData] = useState<JourneyResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isNarrationLoading, setIsNarrationLoading] = useState(false);
+  const [isNarrationPlaying, setIsNarrationPlaying] = useState(false);
   const { addHistoryItem } = useHistory();
   const { toast } = useToast();
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioCacheRef = useRef<Map<string, string>>(new Map());
+  const narrationRequestIdRef = useRef(0);
+
+  const stopNarration = useCallback(() => {
+    narrationRequestIdRef.current += 1;
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      audioRef.current = null;
+    }
+    setIsNarrationLoading(false);
+    setIsNarrationPlaying(false);
+  }, []);
+
+  const playNarration = useCallback(async (text: string) => {
+    if (!text || isMuted) return;
+    stopNarration();
+    const requestId = narrationRequestIdRef.current;
+    setIsNarrationLoading(true);
+
+    try {
+      let audioUrl = audioCacheRef.current.get(text);
+      if (!audioUrl) {
+        const tts = await getJourneyTTS(text);
+        if (requestId !== narrationRequestIdRef.current) return;
+        const audioBlob = base64ToBlob(tts.audio_base64, tts.mime_type);
+        audioUrl = URL.createObjectURL(audioBlob);
+        audioCacheRef.current.set(text, audioUrl);
+      }
+
+      if (requestId !== narrationRequestIdRef.current) return;
+      const player = new Audio(audioUrl);
+      audioRef.current = player;
+      player.onended = () => {
+        if (requestId === narrationRequestIdRef.current) {
+          setIsNarrationPlaying(false);
+          setIsNarrationLoading(false);
+        }
+      };
+      player.onpause = () => {
+        if (requestId === narrationRequestIdRef.current) {
+          setIsNarrationPlaying(false);
+        }
+      };
+      player.onplaying = () => {
+        if (requestId === narrationRequestIdRef.current) {
+          setIsNarrationPlaying(true);
+          setIsNarrationLoading(false);
+        }
+      };
+      await player.play();
+    } catch (error) {
+      setIsNarrationLoading(false);
+      setIsNarrationPlaying(false);
+      if (error instanceof APIError) {
+        toast({
+          title: "تعذر تشغيل التعليق الصوتي",
+          description: error.message,
+          variant: "destructive",
+        });
+        return;
+      }
+      toast({
+        title: "تعذر تشغيل التعليق الصوتي",
+        description: "قد تحتاج الضغط على إعادة التشغيل للسماح بالصوت.",
+        variant: "destructive",
+      });
+    }
+  }, [isMuted, stopNarration, toast]);
+
+  useEffect(() => {
+    return () => {
+      stopNarration();
+      audioCacheRef.current.forEach((url) => URL.revokeObjectURL(url));
+      audioCacheRef.current.clear();
+    };
+  }, [stopNarration]);
 
   const maxStep = useMemo(() => {
     if (!journeyData) return 0;
@@ -32,6 +159,7 @@ const JourneyThroughTime = () => {
   }, [journeyData]);
 
   const handleExplore = async (theme: string) => {
+    stopNarration();
     setSelectedTheme(theme);
     setIsLoading(true);
     setJourneyData(null);
@@ -64,11 +192,56 @@ const JourneyThroughTime = () => {
   const currentEra = journeyData && !isIntroStep && !isSummaryStep
     ? journeyData.eras[currentStep - 1]
     : null;
+  const sceneProgress = maxStep > 0 ? Math.round((currentStep / maxStep) * 100) : 0;
+
+  const sceneTitle = useMemo(() => {
+    if (!journeyData) return "مشهد تمهيدي";
+    if (isIntroStep) return "مشهد البداية";
+    if (isSummaryStep) return "المشهد الختامي";
+    return currentEra?.era_label || "مشهد زمني";
+  }, [journeyData, isIntroStep, isSummaryStep, currentEra]);
+
+  const stepLabels = useMemo(() => {
+    if (!journeyData) return [];
+    return [
+      "البداية",
+      ...journeyData.eras.map((era) => era.era_label),
+      "الخلاصة",
+    ];
+  }, [journeyData]);
+
+  const currentEraColorClass = currentEra
+    ? eraColors[(currentStep - 1) % eraColors.length]
+    : "bg-gold/10";
+  const currentEraGlowClass = currentEra
+    ? eraGlowClasses[(currentStep - 1) % eraGlowClasses.length]
+    : "from-gold/20 via-gold/5 to-transparent";
+
+  const sceneNarrationText = useMemo(
+    () => getSceneNarration(journeyData, currentStep, selectedTheme),
+    [journeyData, currentStep, selectedTheme]
+  );
+
+  useEffect(() => {
+    if (!journeyData || isLoading) return;
+    if (isMuted || !sceneNarrationText) {
+      stopNarration();
+      return;
+    }
+    void playNarration(sceneNarrationText);
+  }, [journeyData, isLoading, sceneNarrationText, isMuted, playNarration, stopNarration]);
 
   return (
     <PageLayout title="رحلة عبر الزمن">
       <div className="relative min-h-[calc(100vh-3.5rem)] p-6">
         <ArabicLettersBg />
+        <motion.div
+          aria-hidden
+          className={`pointer-events-none absolute inset-0 bg-gradient-radial ${currentEraGlowClass}`}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: journeyData ? 1 : 0 }}
+          transition={{ duration: 0.7 }}
+        />
         <div className="max-w-5xl mx-auto relative z-10">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-10">
             <Clock className="h-10 w-10 text-gold mx-auto mb-4" />
@@ -84,8 +257,8 @@ const JourneyThroughTime = () => {
                 variant={selectedTheme === theme ? "default" : "outline"}
                 className={`font-ui ${
                   selectedTheme === theme
-                    ? "bg-primary text-primary-foreground"
-                    : "border-gold/30 text-foreground/70 hover:bg-gold/10"
+                    ? "bg-primary text-primary-foreground shadow-[0_0_18px_rgba(212,165,116,0.35)]"
+                    : "border-gold/30 text-foreground/70 hover:bg-gold/10 hover:scale-[1.03]"
                 }`}
                 onClick={() => handleExplore(theme)}
               >
@@ -96,50 +269,133 @@ const JourneyThroughTime = () => {
 
           {/* حالة التحميل */}
           {isLoading && (
-            <div className="flex flex-col items-center py-20">
+            <div className="flex flex-col items-center py-20 glass-card bg-card/65">
               <Loader2 className="h-8 w-8 text-gold animate-spin mb-4" />
-              <p className="font-body text-muted-foreground">نسافر عبر الزمن...</p>
+              <p className="font-body text-muted-foreground">نسافر عبر الزمن... يتم اختيار مشهد جديد لكل عصر</p>
             </div>
           )}
 
           {/* الرحلة التفاعلية */}
-          <AnimatePresence>
+          <AnimatePresence mode="wait">
             {journeyData && !isLoading && (
               <motion.div
                 key={`${selectedTheme}-${currentStep}`}
                 initial={{ opacity: 0, y: 14 }}
                 animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.35 }}
               >
                 <OrnamentalDivider />
 
-                {/* شريط التقدم */}
-                <div className="flex items-center justify-center gap-2 mb-6">
-                  {Array.from({ length: maxStep + 1 }).map((_, idx) => (
-                    <span
-                      key={idx}
-                      className={`h-1.5 w-10 rounded-full transition-colors ${
-                        idx <= currentStep ? "bg-gold" : "bg-gold/20"
-                      }`}
+                {/* شريط المشهد + تقدم الرحلة */}
+                <div className="mb-6">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                    <p className="font-ui text-xs text-muted-foreground">
+                      المشهد الحالي: <span className="text-foreground">{sceneTitle}</span>
+                    </p>
+                    <p className="font-ui text-xs text-muted-foreground">
+                      تقدم الرحلة: {sceneProgress}%
+                    </p>
+                  </div>
+                  <div className="h-1.5 bg-gold/15 rounded-full overflow-hidden">
+                    <motion.div
+                      className="h-full bg-gold"
+                      initial={{ width: 0 }}
+                      animate={{ width: `${sceneProgress}%` }}
+                      transition={{ duration: 0.35 }}
                     />
-                  ))}
+                  </div>
+                  <div className="flex flex-wrap items-center justify-center gap-2 mt-4">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-gold/30 hover:bg-gold/10"
+                      onClick={() => {
+                        if (isMuted) {
+                          setIsMuted(false);
+                        } else {
+                          setIsMuted(true);
+                          stopNarration();
+                        }
+                      }}
+                    >
+                      {isMuted ? <VolumeX className="h-4 w-4 ml-1" /> : <Volume2 className="h-4 w-4 ml-1" />}
+                      {isMuted ? "تشغيل الصوت" : "كتم الصوت"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-gold/30 hover:bg-gold/10"
+                      onClick={() => void playNarration(sceneNarrationText)}
+                      disabled={!sceneNarrationText || isMuted || isNarrationLoading}
+                    >
+                      <RotateCcw className="h-4 w-4 ml-1" />
+                      إعادة السرد
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-gold/30 hover:bg-gold/10"
+                      onClick={stopNarration}
+                      disabled={!isNarrationPlaying && !isNarrationLoading}
+                    >
+                      إيقاف الصوت
+                    </Button>
+                  </div>
+                  {(isNarrationLoading || isNarrationPlaying) && (
+                    <p className="font-ui text-[11px] text-muted-foreground text-center mt-2">
+                      {isNarrationLoading ? "جاري تجهيز التعليق الصوتي..." : "يتم الآن إلقاء المشهد..."}
+                    </p>
+                  )}
+                </div>
+
+                {/* Timeline تفاعلي */}
+                <div className="flex flex-wrap justify-center gap-2 mb-7">
+                  {stepLabels.map((label, idx) => {
+                    const active = idx === currentStep;
+                    const passed = idx < currentStep;
+                    return (
+                      <button
+                        key={`${label}-${idx}`}
+                        onClick={() => setCurrentStep(idx)}
+                        className={`px-3 py-1.5 rounded-full border text-xs font-ui transition-all ${
+                          active
+                            ? "bg-gold text-brown-900 border-gold shadow-[0_0_14px_rgba(212,165,116,0.35)]"
+                            : passed
+                              ? "bg-gold/20 text-foreground border-gold/30"
+                              : "bg-transparent text-muted-foreground border-gold/20 hover:bg-gold/10"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
                 </div>
 
                 {/* شاشة البداية */}
                 {isIntroStep && (
-                  <div className="glass-card p-8 text-center bg-card/85">
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.98 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="glass-card p-8 text-center bg-card/85 border border-gold/20"
+                  >
                     <p className="font-display text-2xl text-foreground mb-3"> بداية الرحلة</p>
-                    <p className="font-body text-muted-foreground leading-loose">
+                    <p className="font-body text-muted-foreground leading-loose text-lg">
                       {journeyData.intro_line}
                     </p>
                     <p className="font-ui text-xs text-muted-foreground/80 mt-3">
                       اضغط السهم للانتقال إلى أول عصر.
                     </p>
-                  </div>
+                  </motion.div>
                 )}
 
                 {/* شاشة العصر الحالي */}
                 {currentEra && (
-                  <div className={`glass-card p-6 ${eraColors[(currentStep - 1) % eraColors.length]}`}>
+                  <motion.div
+                    initial={{ opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={`glass-card p-6 border border-gold/20 ${currentEraColorClass}`}
+                  >
                     <div className="flex flex-wrap items-center gap-2 mb-3">
                       <span className="font-display text-2xl text-foreground">{currentEra.era_label}</span>
                     </div>
@@ -148,28 +404,45 @@ const JourneyThroughTime = () => {
                       {currentEra.poet_name || "غير معروف"}
                     </p>
 
-                    <div className="space-y-2">
+                    <motion.div
+                      className="space-y-2"
+                      initial="hidden"
+                      animate="show"
+                      variants={{
+                        hidden: {},
+                        show: {
+                          transition: { staggerChildren: 0.11 },
+                        },
+                      }}
+                    >
                       {currentEra.verses.map((verse, idx) => (
-                        <blockquote
+                        <motion.blockquote
                           key={`${currentEra.era_key}-${idx}`}
+                          initial={{ opacity: 0, x: 16 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ duration: 0.28 }}
                           className="font-display text-lg text-foreground/90 border-r-2 border-gold/40 pr-3 leading-loose"
                         >
                           {verse}
-                        </blockquote>
+                        </motion.blockquote>
                       ))}
-                    </div>
+                    </motion.div>
 
                     {currentEra.fallback_used && (
                       <p className="font-ui text-xs text-muted-foreground mt-4">
                         ملاحظة: لم تتوفر قصيدة مصنفة مباشرة بنفس الموضوع في هذا العصر، فتم اختيار قصيدة من نفس العصر.
                       </p>
                     )}
-                  </div>
+                  </motion.div>
                 )}
 
                 {/* شاشة النهاية */}
                 {isSummaryStep && (
-                  <div className="glass-card p-8 bg-card/90">
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.99 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="glass-card p-8 bg-card/90 border border-gold/25"
+                  >
                     <p className="font-display text-2xl text-foreground mb-4 text-center">
                       نهاية الرحلة عبر الزمن
                     </p>
@@ -201,11 +474,11 @@ const JourneyThroughTime = () => {
                         </ul>
                       </div>
                     )}
-                  </div>
+                  </motion.div>
                 )}
 
                 {/* أزرار التنقل */}
-                <div className="flex items-center justify-center gap-3 mt-8">
+                <div className="flex flex-wrap items-center justify-center gap-3 mt-8">
                   <Button
                     variant="outline"
                     className="border-gold/30 hover:bg-gold/10"
@@ -223,6 +496,17 @@ const JourneyThroughTime = () => {
                     التالي
                     <ArrowLeft className="h-4 w-4 mr-1" />
                   </Button>
+                  {isSummaryStep && (
+                    <Button
+                      variant="outline"
+                      className="border-gold/30 hover:bg-gold/10"
+                      onClick={() => handleExplore(selectedTheme)}
+                      disabled={!selectedTheme || isLoading}
+                    >
+                      <RefreshCcw className="h-4 w-4 ml-1" />
+                      تجديد الرحلة
+                    </Button>
+                  )}
                 </div>
               </motion.div>
             )}
@@ -231,7 +515,12 @@ const JourneyThroughTime = () => {
           {/* الحالة الفارغة */}
           {!selectedTheme && !isLoading && !journeyData && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center py-20">
-              <Sparkles className="h-16 w-16 text-gold/30 mx-auto mb-4" />
+              <motion.div
+                animate={{ y: [0, -6, 0] }}
+                transition={{ duration: 2.2, repeat: Infinity }}
+              >
+                <Sparkles className="h-16 w-16 text-gold/30 mx-auto mb-4" />
+              </motion.div>
               <p className="font-body text-muted-foreground/50">اختر موضوعاً لتبدأ الرحلة</p>
             </motion.div>
           )}

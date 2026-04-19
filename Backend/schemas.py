@@ -88,6 +88,10 @@ class JourneyRequest(BaseModel):
     theme: str = Field(..., min_length=1, max_length=60)
 
 
+class JourneyTTSRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=1800)
+
+
 class JourneyEraPoem(BaseModel):
     era_key:        str
     era_label:      str
@@ -114,6 +118,12 @@ class JourneyResponse(BaseModel):
     eras:           list[JourneyEraPoem]
     summary:        JourneySummary
     warnings:       list[str] = []
+
+
+class JourneyTTSResponse(BaseModel):
+    success: bool = True
+    audio_base64: str
+    mime_type: str = "audio/mpeg"
 
 
 # ── فسرها لي (تفسير الأبيات) ──────────────────────────────────

@@ -15,6 +15,7 @@ from schemas import (
     MeaningEntry, ExampleVerse,
     MoodRequest, MoodResponse, PoemEntry,
     JourneyRequest, JourneyResponse, JourneyEraPoem, JourneySummary,
+    JourneyTTSRequest, JourneyTTSResponse,
     InterpretRequest, InterpretResponse,
     WriteGenerateRequest, WriteGenerateResponse,
     WriteCompleteRequest, WriteCompleteResponse,
@@ -30,6 +31,7 @@ try:
     from services.verse_searcher import search_verses_for_word
     from services.poetry_retriever import get_poems_for_mood, get_db_stats
     from services.journey_service import build_time_journey
+    from services.tts_service import synthesize_journey_speech
     from services.fasserha_service import fasserha_api_response
     from services.help_me_write_service import generate_poetry_response, complete_poem_response
 except ModuleNotFoundError:
@@ -39,6 +41,7 @@ except ModuleNotFoundError:
         from Backend.services.verse_searcher import search_verses_for_word
         from Backend.services.poetry_retriever import get_poems_for_mood, get_db_stats
         from Backend.services.journey_service import build_time_journey
+        from Backend.services.tts_service import synthesize_journey_speech
         from Backend.services.fasserha_service import fasserha_api_response
         from Backend.services.help_me_write_service import generate_poetry_response, complete_poem_response
     except ModuleNotFoundError:
@@ -47,6 +50,7 @@ except ModuleNotFoundError:
         from verse_searcher import search_verses_for_word
         from poetry_retriever import get_poems_for_mood, get_db_stats
         from journey_service import build_time_journey
+        from tts_service import synthesize_journey_speech
         from fasserha_service import fasserha_api_response
         from help_me_write_service import generate_poetry_response, complete_poem_response
 load_dotenv()
@@ -330,6 +334,24 @@ async def explore_time_journey(req: JourneyRequest):
             final_line=payload.get("summary", {}).get("final_line", ""),
         ),
         warnings=payload.get("warnings", []),
+    )
+
+
+@app.post("/api/journey/tts", response_model=JourneyTTSResponse)
+async def generate_journey_tts(req: JourneyTTSRequest):
+    try:
+        payload = await asyncio.to_thread(synthesize_journey_speech, req.text)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"خطأ توليد الصوت: {str(e)}")
+
+    return JourneyTTSResponse(
+        success=True,
+        audio_base64=payload.get("audio_base64", ""),
+        mime_type=payload.get("mime_type", "audio/mpeg"),
     )
 
 # =============================================================

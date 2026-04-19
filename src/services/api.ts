@@ -114,6 +114,15 @@ export interface JourneyResponse {
 export const getTimeJourney = (theme: string) =>
   post<JourneyResponse>("/api/journey/explore", { theme });
 
+export interface JourneyTTSResponse {
+  success: boolean;
+  audio_base64: string;
+  mime_type: string;
+}
+
+export const getJourneyTTS = (text: string) =>
+  post<JourneyTTSResponse>("/api/journey/tts", { text });
+
 // ── ساعدني أكتب (التوليد فقط) ─────────────────────────────────
 
 export interface GenerateVerseRequest {
@@ -275,5 +284,4 @@ export const interpretVerses = (poem: string) =>
 // // export const generateVerse   = (idea: string)   => post("/api/write/generate",   { idea });
 // // export const getTimeJourney  = (topic: string)  => post("/api/journey/explore",  { topic });
 // // export const interpretVerses = (verses: string) => post("/api/interpret/verses", { verses });
-
 
