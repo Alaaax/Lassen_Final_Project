@@ -1,11 +1,13 @@
 """
 خدمة ميزة "فسرها لي" — تشغيل التصنيف عن بُعد عبر HF Space.
+نسخة محسّنة لمعالجة الأبيات الطويلة.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Any
 
 import requests
@@ -16,6 +18,10 @@ from Fasserha_prompts import FASSERHA_SYSTEM_PROMPT, build_user_prompt
 
 load_dotenv()
 
+
+# =============================================================
+# ENV helpers
+# =============================================================
 
 def _required_env(key: str) -> str:
     value = os.getenv(key, "").strip()
@@ -32,6 +38,10 @@ def _get_openai_client() -> OpenAI:
     return OpenAI(api_key=_required_env("OPENAI_API_KEY"))
 
 
+# =============================================================
+# Remote classifier
+# =============================================================
+
 def _remote_classify(poem_text: str) -> dict[str, Any]:
     url = _required_env("FASSERHA_REMOTE_URL")
     api_key = _required_env("FASSERHA_REMOTE_API_KEY")
@@ -42,7 +52,6 @@ def _remote_classify(poem_text: str) -> dict[str, Any]:
         "x-api-key": api_key,
     }
 
-    # إذا الـ Space خاص (Private)، أرسل Bearer token
     hf_bearer = _optional_env("HF_SPACE_BEARER_TOKEN")
     if hf_bearer:
         headers["Authorization"] = f"Bearer {hf_bearer}"
@@ -68,36 +77,224 @@ def _remote_classify(poem_text: str) -> dict[str, Any]:
     return data
 
 
+# =============================================================
+# عدّ الأبيات بدقة
+# =============================================================
+
+# فواصل شائعة بين شطرين أو بين بيتين
+_VERSE_SEPARATORS = re.compile(r"[\.\،\؛\;\*\—\–\-]{2,}|\s{4,}|\t+")
+
+
 def _count_verses(poem_text: str) -> int:
-    lines = [l.strip() for l in poem_text.split("\n") if l.strip()]
+    """
+    عدّ الأبيات بطريقة أذكى:
+    - يتعامل مع البيت المكتوب على سطر واحد أو على شطرين منفصلين.
+    - يتعامل مع الفواصل (نجوم، شرطات، مسافات طويلة).
+    """
+    if not poem_text or not poem_text.strip():
+        return 1
+
+    # تنظيف
+    text = poem_text.strip()
+
+    # توحيد الفواصل
+    text = _VERSE_SEPARATORS.sub("\n", text)
+
+    # السطور غير الفارغة
+    lines = [l.strip() for l in text.split("\n") if l.strip()]
+
+    if not lines:
+        return 1
+
+    # هيوريستيك بسيط:
+    # - إذا كل سطر طويل (>40 حرف) فهو بيت كامل
+    # - إذا السطور قصيرة (<40 حرف) فالغالب أنها شطور → كل سطرين = بيت
+    avg_len = sum(len(l) for l in lines) / len(lines)
+
+    if avg_len < 40 and len(lines) >= 2:
+        # شطور قصيرة → كل سطرين بيت
+        return max(1, (len(lines) + 1) // 2)
+
     return max(1, len(lines))
 
 
+# =============================================================
+# حساب max_tokens ديناميكياً للأبيات الطويلة
+# =============================================================
+
 def _calc_max_tokens(depth: str, verses_count: int) -> int:
+    """
+    حساب الـ tokens بناءً على عدد الأبيات والمستوى.
+    لكل بيت في deep ~250 token (verse + meaning + بنية JSON).
+    """
     if depth == "brief":
-        return 700
-    return min(1000 + verses_count * 150, 3500)
+        # brief: تفسير قصير حتى للأبيات الكثيرة
+        if verses_count <= 5:
+            return 800
+        if verses_count <= 15:
+            return 1200
+        return 1800
+
+    # deep: يحتاج tokens كثيرة لكل بيت
+    base = 1500  # explanation + imagery + meter_effect + summary + mood
+    per_verse = 280  # verse text + meaning في JSON
+
+    # الحد الأقصى لـ gpt-4o في الرد ~16000، لكن نضع سقف آمن
+    estimated = base + (verses_count * per_verse)
+    return min(estimated, 12000)
 
 
-def _safe_parse_json(raw: str, depth: str) -> dict[str, Any]:
-    fallback = {
+# =============================================================
+# تنظيف الرموز والإيموجي من الردّ
+# =============================================================
+
+# Emoji ranges
+_EMOJI_PATTERN = re.compile(
+    "["
+    "\U0001F600-\U0001F64F"
+    "\U0001F300-\U0001F5FF"
+    "\U0001F680-\U0001F6FF"
+    "\U0001F700-\U0001F77F"
+    "\U0001F780-\U0001F7FF"
+    "\U0001F800-\U0001F8FF"
+    "\U0001F900-\U0001F9FF"
+    "\U0001FA00-\U0001FA6F"
+    "\U0001FA70-\U0001FAFF"
+    "\U00002600-\U000026FF"
+    "\U00002700-\U000027BF"
+    "\U0000FE00-\U0000FE0F"
+    "\U0001F1E0-\U0001F1FF"
+    "]+",
+    flags=re.UNICODE,
+)
+
+# رموز زخرفية شائعة يضعها GPT أحياناً
+_DECORATIVE_CHARS = re.compile(r"[★✦◆▪▫■□●○♦♥♠♣→←↑↓⇒⇐⇑⇓✓✗❌✅═━─┃│┌┐└┘├┤┬┴┼]")
+
+
+def _strip_decorations(text: str) -> str:
+    """يزيل الإيموجي والرموز الزخرفية من النص."""
+    if not isinstance(text, str):
+        return text
+    text = _EMOJI_PATTERN.sub("", text)
+    text = _DECORATIVE_CHARS.sub("", text)
+    # تنظيف Markdown bold/headers لو ظهرت
+    text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+    text = re.sub(r"__(.+?)__", r"\1", text)
+    text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
+    # تنظيف مسافات زائدة
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    return text.strip()
+
+
+def _clean_payload(obj: Any) -> Any:
+    """ينظّف الإيموجي والرموز من كل النصوص في الـ dict/list."""
+    if isinstance(obj, str):
+        return _strip_decorations(obj)
+    if isinstance(obj, list):
+        return [_clean_payload(x) for x in obj]
+    if isinstance(obj, dict):
+        return {k: _clean_payload(v) for k, v in obj.items()}
+    return obj
+
+
+# =============================================================
+# تحليل JSON آمن مع محاولة استرجاع
+# =============================================================
+
+def _try_extract_json(raw: str) -> dict[str, Any] | None:
+    """
+    محاولة استخراج JSON صالح حتى لو الرد فيه نص قبل/بعد
+    أو لو القوس النهائي مفقود (انقطاع التوليد).
+    """
+    if not raw:
+        return None
+
+    # محاولة 1: مباشرة
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            return parsed
+    except json.JSONDecodeError:
+        pass
+
+    # محاولة 2: استخراج أول { وآخر }
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        candidate = raw[start:end + 1]
+        try:
+            parsed = json.loads(candidate)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+
+    # محاولة 3: إذا الرد انقطع، نحاول إغلاق الأقواس
+    if start != -1:
+        candidate = raw[start:]
+        # موازنة الأقواس
+        open_braces = candidate.count("{")
+        close_braces = candidate.count("}")
+        open_brackets = candidate.count("[")
+        close_brackets = candidate.count("]")
+
+        # نحذف من الآخر حتى آخر فاصلة أو اقتباس مغلق
+        # ثم نضيف إغلاقات
+        # تجربة: قص حتى آخر " ثم إضافة الإغلاقات
+        last_quote = candidate.rfind('"')
+        if last_quote > 0:
+            trimmed = candidate[:last_quote + 1]
+            # إضافة الإغلاقات الناقصة
+            trimmed += "]" * (open_brackets - close_brackets)
+            trimmed += "}" * (open_braces - close_braces)
+            try:
+                parsed = json.loads(trimmed)
+                if isinstance(parsed, dict):
+                    return parsed
+            except json.JSONDecodeError:
+                pass
+
+    return None
+
+
+def _safe_parse_json(raw: str, depth: str, verses_count: int) -> dict[str, Any]:
+    """يحاول تحليل JSON، ولو فشل يرجع fallback نظيف بدون نص خام."""
+    parsed = _try_extract_json(raw)
+
+    if parsed is not None:
+        # تأكد من الحقول الأساسية
+        parsed.setdefault("status", "ok")
+        parsed.setdefault("depth", depth)
+        parsed.setdefault("verses_count", verses_count)
+        parsed.setdefault("summary", "")
+        parsed.setdefault("explanation", "")
+        parsed.setdefault("verses_breakdown", [])
+        parsed.setdefault("imagery", "")
+        parsed.setdefault("meter_effect", "")
+        parsed.setdefault("mood", "")
+        return _clean_payload(parsed)
+
+    # fallback نظيف — لا نضع raw في explanation أبداً
+    return {
         "status": "ok",
         "depth": depth,
-        "summary": "",
-        "explanation": raw or "تعذّر استكمال التفسير.",
+        "verses_count": verses_count,
+        "summary": "تعذّر إكمال التفسير — حاول مرة أخرى.",
+        "explanation": (
+            "حدث خطأ أثناء توليد التفسير. "
+            "إذا كانت الأبيات طويلة جداً، جرّب تقسيمها على جزئين."
+        ),
         "verses_breakdown": [],
         "imagery": "",
         "meter_effect": "",
         "mood": "",
     }
-    if not raw:
-        return fallback
-    try:
-        parsed = json.loads(raw)
-        return parsed if isinstance(parsed, dict) else fallback
-    except json.JSONDecodeError:
-        return fallback
 
+
+# =============================================================
+# توليد التفسير عبر GPT
+# =============================================================
 
 def _generate_explanation(
     poem_text: str,
@@ -106,19 +303,23 @@ def _generate_explanation(
     topic_name: str,
     depth: str = "brief",
 ) -> dict[str, Any]:
+    verses_count = _count_verses(poem_text)
+
     user_prompt = build_user_prompt(
         poem_text=poem_text,
         meter_name=meter_name,
         era_name=era_name,
         topic_name=topic_name,
         depth=depth,
+        verses_count=verses_count,
     )
 
     model_name = _optional_env("FASSERHA_LLM_MODEL", "gpt-4o")
+    max_tokens = _calc_max_tokens(depth, verses_count)
 
     response = _get_openai_client().chat.completions.create(
         model=model_name,
-        max_tokens=_calc_max_tokens(depth, _count_verses(poem_text)),
+        max_tokens=max_tokens,
         temperature=0.4,
         response_format={"type": "json_object"},
         messages=[
@@ -128,8 +329,47 @@ def _generate_explanation(
     )
 
     raw = (response.choices[0].message.content or "").strip()
-    return _safe_parse_json(raw, depth)
+    parsed = _safe_parse_json(raw, depth, verses_count)
 
+    # ضمان أن depth صحيح
+    parsed["depth"] = depth
+
+    # في deep: إذا verses_breakdown فارغة، نحاول تعبئتها على الأقل بالنص الخام
+    if depth == "deep" and not parsed.get("verses_breakdown"):
+        # نقسّم النص إلى أبيات يدوياً ونضع شرحاً عاماً
+        verses_list = _split_into_verses(poem_text)
+        parsed["verses_breakdown"] = [
+            {"verse": v, "meaning": "تعذّر توليد شرح تفصيلي لهذا البيت — راجع التفسير العام أعلاه."}
+            for v in verses_list
+        ]
+
+    return parsed
+
+
+def _split_into_verses(poem_text: str) -> list[str]:
+    """يقسّم النص إلى أبيات للـ fallback عند فشل verses_breakdown."""
+    text = _VERSE_SEPARATORS.sub("\n", poem_text.strip())
+    lines = [l.strip() for l in text.split("\n") if l.strip()]
+
+    if not lines:
+        return [poem_text.strip()]
+
+    avg_len = sum(len(l) for l in lines) / len(lines)
+
+    # شطور قصيرة → جمع كل سطرين
+    if avg_len < 40 and len(lines) >= 2:
+        verses = []
+        for i in range(0, len(lines), 2):
+            pair = lines[i:i + 2]
+            verses.append(" ... ".join(pair))
+        return verses
+
+    return lines
+
+
+# =============================================================
+# الواجهات العامة
+# =============================================================
 
 def fasserha_li(poem_text: str, depth: str = "brief") -> dict[str, Any]:
     cls = _remote_classify(poem_text)
@@ -192,6 +432,17 @@ def fasserha_api_response(poem_text: str, depth: str = "brief") -> dict[str, Any
     era = result["era"]
     topic = result["topic"]
 
+    # تنظيف نهائي للـ verses_breakdown — نضمن أن كل entry فيه verse و meaning
+    raw_breakdown = gpt.get("verses_breakdown", []) or []
+    cleaned_breakdown = []
+    for item in raw_breakdown:
+        if not isinstance(item, dict):
+            continue
+        verse_txt = _strip_decorations(str(item.get("verse", "")).strip())
+        meaning_txt = _strip_decorations(str(item.get("meaning", "")).strip())
+        if verse_txt and meaning_txt:
+            cleaned_breakdown.append({"verse": verse_txt, "meaning": meaning_txt})
+
     return {
         "success": True,
         "data": {
@@ -211,12 +462,13 @@ def fasserha_api_response(poem_text: str, depth: str = "brief") -> dict[str, Any
                 "top3": topic.get("top3", []),
             },
             "depth": gpt.get("depth", depth),
-            "summary": gpt.get("summary", ""),
-            "explanation": gpt.get("explanation", ""),
-            "verses_breakdown": gpt.get("verses_breakdown", []),
-            "imagery": gpt.get("imagery", ""),
-            "meter_effect": gpt.get("meter_effect", ""),
+            "summary": _strip_decorations(gpt.get("summary", "")),
+            "explanation": _strip_decorations(gpt.get("explanation", "")),
+            "verses_breakdown": cleaned_breakdown,
+            "imagery": _strip_decorations(gpt.get("imagery", "")),
+            "meter_effect": _strip_decorations(gpt.get("meter_effect", "")),
             "key_word": "",
-            "mood": gpt.get("mood", ""),
+            "mood": _strip_decorations(gpt.get("mood", "")),
         },
     }
+    

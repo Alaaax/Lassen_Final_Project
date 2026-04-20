@@ -1,7 +1,7 @@
 // =============================================================
 // src/services/api.ts
 // =============================================================
-//const BASE = "http://localhost:8000"; اذا بتشغلينه لوكال خليه localhost:8000
+//const BASE = "http://localhost:8000";// اذا بتشغلينه لوكال خليه localhost:8000
 const BASE = "https://lassen-final-project-1.onrender.com";
 
 export class APIError extends Error {
@@ -183,22 +183,34 @@ export interface InterpretTopic {
   top3: InterpretTopicTopItem[];
 }
 
+export interface InterpretVerseBreakdown {
+  verse: string;
+  meaning: string;
+}
+
 export interface InterpretData {
   meter: InterpretMeter;
   era: InterpretEra;
   topic: InterpretTopic;
+  depth: string;
+  summary: string;
   explanation: string;
+  verses_breakdown: InterpretVerseBreakdown[];
+  imagery: string;
+  meter_effect: string;
+  key_word: string;
+  mood: string;
 }
 
 export interface InterpretResponse {
   success: boolean;
-  data: InterpretData;
+  data?: InterpretData;          // أصبحت optional لأن الفشل ما يرجع data
+  error_type?: string;
+  message?: string;
 }
 
-export const interpretVerses = (poem: string) =>
-  post<InterpretResponse>("/api/interpret/verses", { poem });
-
-
+export const interpretVerses = (poem: string, depth: "brief" | "deep" = "brief") =>
+  post<InterpretResponse>("/api/interpret/verses", { poem, depth });
 
 // TODO:
 // export const generateVerse   = (idea: string)   => post("/api/write/generate",   { idea });
