@@ -15,7 +15,7 @@ import ArabicLettersBg from "@/components/ArabicLettersBg";
 import OrnamentalDivider from "@/components/OrnamentalDivider";
 import PageNavButton from "@/components/PageNavButton";
 import { useHistory } from "@/contexts/HistoryContext";
-import { APIError, completeVerse, generateVerse } from "@/services/api";
+import { APIError, completeVerse, generateVerse, type CompleteVerseResponse } from "@/services/api";
 
 // === نقاط ربط النماذج (لا تغيّر بنية التواقيع) ================
 async function generatePoetry(idea: string): Promise<string> {
@@ -37,7 +37,35 @@ async function generatePoetry(idea: string): Promise<string> {
   const meterLine = response.meter ? `البحر: ${response.meter}\n\n` : "";
   return `${meterLine}${verses.join("\n")}`;
 }
-async function completePoem(partial: string): Promise<string> {
+interface CompletePoemResult {
+  text: string;
+  alternatives: NonNullable<CompleteVerseResponse["alternatives"]>;
+  currentIndex: number;
+  totalCandidates: number;
+}
+
+function buildCompleteResultText(
+  alt: NonNullable<CompleteVerseResponse["alternatives"]>[number],
+  totalCandidates: number,
+  rank: number
+): string {
+  const meta = alt.meta;
+  const header = meta
+    ? `الشاعر: ${meta.poet || "مجهول"}\nالبحر: ${meta.meter || "-"}\nالعصر: ${meta.era || "-"}\n`
+    : "";
+  const hint = totalCandidates > 1 ? `\nالنتيجة ${rank} من ${totalCandidates}\n` : "\n";
+  const poemLines = (alt.poem_verses || []).map((v) => v.verse || "").filter(Boolean).join("\n");
+  return `${header}${hint}${poemLines}`.trim();
+}
+
+function ordinalLabel(rank: number): string {
+  if (rank === 1) return "الأولى";
+  if (rank === 2) return "الثانية";
+  if (rank === 3) return "الثالثة";
+  return `${rank}`;
+}
+
+async function completePoem(partial: string): Promise<CompletePoemResult> {
   const response = await completeVerse(partial);
   if (!response.success) {
     throw new Error(response.message || "تعذّر إكمال البيت.");
@@ -47,17 +75,30 @@ async function completePoem(partial: string): Promise<string> {
     throw new Error(response.message || "هذا البيت غير موجود في قاعدة البيانات.");
   }
 
-  const verses = response.poem_verses || [];
-  if (verses.length === 0) {
+  const alternatives = response.alternatives || [];
+  const fallbackAlt = {
+    rank: 1,
+    poem_verses: response.poem_verses || [],
+    meta: response.meta,
+    matched_verse: undefined,
+  };
+  const finalAlternatives = alternatives.length > 0 ? alternatives : [fallbackAlt];
+  if ((finalAlternatives[0]?.poem_verses || []).length === 0) {
     throw new Error(response.message || "تم العثور على البيت لكن لم نتمكن من عرض القصيدة.");
   }
-
-  const meta = response.meta;
-  const header = meta
-    ? `الشاعر: ${meta.poet || "مجهول"}\nالبحر: ${meta.meter || "-"}\nالعصر: ${meta.era || "-"}\n\n`
-    : "";
-  const poemLines = verses.map((v) => v.verse || "").filter(Boolean).join("\n");
-  return `${header}${poemLines}`.trim();
+  const totalCandidates = response.total_candidates || finalAlternatives.length;
+  const currentIndex = Math.max(0, Math.min(response.current_index || 0, finalAlternatives.length - 1));
+  const text = buildCompleteResultText(
+    finalAlternatives[currentIndex],
+    totalCandidates,
+    (finalAlternatives[currentIndex]?.rank || currentIndex + 1)
+  );
+  return {
+    text,
+    alternatives: finalAlternatives,
+    currentIndex,
+    totalCandidates,
+  };
 }
 
 interface HistoryEntry {
@@ -65,6 +106,9 @@ interface HistoryEntry {
   title: string;
   prompt: string;
   result: string;
+  alternatives?: NonNullable<CompleteVerseResponse["alternatives"]>;
+  currentIndex?: number;
+  totalCandidates?: number;
 }
 
 const summarize = (text: string, max = 30) => {
@@ -72,12 +116,44 @@ const summarize = (text: string, max = 30) => {
   return t.length > max ? t.slice(0, max) + "…" : t;
 };
 
-const ResultCard = ({ entry }: { entry: HistoryEntry }) => (
+const ResultCard = ({
+  entry,
+  onSelectAlternative,
+}: {
+  entry: HistoryEntry;
+  onSelectAlternative?: (index: number) => void;
+}) => (
   <div className="glass-card-warm p-5 rounded-xl">
     <p className="font-ui text-xs text-brown-500 mb-2">— {entry.title}</p>
     <p className="font-amiri text-base text-brown-700 whitespace-pre-wrap leading-loose text-center">
       {entry.result}
     </p>
+    {!!entry.alternatives && entry.totalCandidates && entry.totalCandidates > 1 && (
+      <div className="mt-4 space-y-2">
+        <p className="font-ui text-xs text-brown-600 text-center">اختر من أقرب القصائد:</p>
+        <div className="flex items-center justify-center gap-2">
+          {entry.alternatives.map((alt, idx) => {
+            const isActive = (entry.currentIndex || 0) === idx;
+            const label = ordinalLabel(alt.rank || idx + 1);
+            return (
+              <Button
+                key={`${entry.id}-alt-${idx}`}
+                variant={isActive ? "default" : "outline"}
+                size="sm"
+                className={
+                  isActive
+                    ? "bg-brown-gradient text-primary-foreground"
+                    : "border-brown-300/60 text-brown-700 hover:bg-brown-100/50"
+                }
+                onClick={() => onSelectAlternative?.(idx)}
+              >
+                {`القصيدة ${label}`}
+              </Button>
+            );
+          })}
+        </div>
+      </div>
+    )}
   </div>
 );
 
@@ -95,12 +171,14 @@ interface FeatureSectionProps {
   setInput: (v: string) => void;
   isLoading: boolean;
   onSubmit: () => void;
+  onSelectAlternative?: (entryId: string, index: number) => void;
 }
 
 const FeatureSection = ({
   label, placeholder, buttonIdle, buttonLoading, buttonIcon,
   historyTitle, history, activeId, setActiveId,
   input, setInput, isLoading, onSubmit,
+  onSelectAlternative,
 }: FeatureSectionProps) => {
   const active = history.find(h => h.id === activeId) ?? history[0] ?? null;
   const resultsRef = useRef<HTMLDivElement>(null);
@@ -144,7 +222,12 @@ const FeatureSection = ({
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
               >
-                <ResultCard entry={active} />
+                <ResultCard
+                  entry={active}
+                  onSelectAlternative={
+                    onSelectAlternative ? (index) => onSelectAlternative(active.id, index) : undefined
+                  }
+                />
               </motion.div>
             </AnimatePresence>
           </div>
@@ -197,6 +280,29 @@ const HelpMeWrite = () => {
   const [completeError, setCompleteError] = useState<string | null>(null);
   const { addHistoryItem } = useHistory();
 
+  const selectCompleteAlternative = (entryId: string, selectedIndex: number) => {
+    setCompleteHistory((prev) =>
+      prev.map((entry) => {
+        if (entry.id !== entryId || !entry.alternatives || entry.alternatives.length <= 1) {
+          return entry;
+        }
+        if (selectedIndex < 0 || selectedIndex >= entry.alternatives.length) {
+          return entry;
+        }
+        const nextAlt = entry.alternatives[selectedIndex];
+        return {
+          ...entry,
+          currentIndex: selectedIndex,
+          result: buildCompleteResultText(
+            nextAlt,
+            entry.totalCandidates || entry.alternatives.length,
+            nextAlt.rank || selectedIndex + 1
+          ),
+        };
+      })
+    );
+  };
+
   const handleGenerate = async () => {
     if (!generateInput.trim()) return;
     setIsGenerating(true);
@@ -237,7 +343,10 @@ const HelpMeWrite = () => {
         id: crypto.randomUUID(),
         title: summarize(completeInput),
         prompt: completeInput,
-        result,
+        result: result.text,
+        alternatives: result.alternatives,
+        currentIndex: result.currentIndex,
+        totalCandidates: result.totalCandidates,
       };
       setCompleteHistory(prev => [entry, ...prev]);
       setCompleteActiveId(entry.id);
@@ -319,6 +428,7 @@ const HelpMeWrite = () => {
                 setInput={setCompleteInput}
                 isLoading={isCompleting}
                 onSubmit={handleComplete}
+                onSelectAlternative={selectCompleteAlternative}
               />
             </TabsContent>
           </Tabs>

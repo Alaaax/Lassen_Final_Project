@@ -199,7 +199,7 @@ class WriteGenerateResponse(BaseModel):
 
 
 class WriteCompleteRequest(BaseModel):
-    partial_verse: str = Field(..., min_length=2, max_length=500)
+    partial_verse: str = Field(..., min_length=2, max_length=2000)
 
 
 class CompletedPoemVerse(BaseModel):
@@ -215,11 +215,21 @@ class WriteCompleteMeta(BaseModel):
     similarity: float = 0.0
 
 
+class WriteCompleteAlternative(BaseModel):
+    rank: int
+    poem_verses: list[CompletedPoemVerse] = []
+    meta: Optional[WriteCompleteMeta] = None
+    matched_verse: Optional[str] = None
+
+
 class WriteCompleteResponse(BaseModel):
     success: bool
     found: bool
     poem_verses: list[CompletedPoemVerse] = []
     meta: Optional[WriteCompleteMeta] = None
+    alternatives: list[WriteCompleteAlternative] = []
+    current_index: int = 0
+    total_candidates: int = 0
     message: Optional[str] = None
 
 

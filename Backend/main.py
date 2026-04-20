@@ -294,11 +294,45 @@ async def complete_write_poetry(req: WriteCompleteRequest):
             "similarity": float(meta_payload.get("similarity") or 0.0),
         }
 
+    alternatives_payload = payload.get("alternatives") or []
+    normalized_alternatives = []
+    if isinstance(alternatives_payload, list):
+        for idx, alt in enumerate(alternatives_payload, start=1):
+            if not isinstance(alt, dict):
+                continue
+            alt_meta = alt.get("meta") or {}
+            if isinstance(alt_meta, dict):
+                alt_meta = {
+                    "poet": alt_meta.get("poet") or "مجهول",
+                    "meter": alt_meta.get("meter") or "-",
+                    "era": alt_meta.get("era") or "-",
+                    "similarity": float(alt_meta.get("similarity") or 0.0),
+                }
+            else:
+                alt_meta = {
+                    "poet": "مجهول",
+                    "meter": "-",
+                    "era": "-",
+                    "similarity": 0.0,
+                }
+
+            normalized_alternatives.append(
+                {
+                    "rank": int(alt.get("rank", idx) or idx),
+                    "poem_verses": alt.get("poem_verses", []),
+                    "meta": alt_meta,
+                    "matched_verse": alt.get("matched_verse"),
+                }
+            )
+
     return WriteCompleteResponse(
         success=bool(payload.get("success", False)),
         found=bool(payload.get("found", False)),
         poem_verses=payload.get("poem_verses", []),
         meta=meta_payload if meta_payload else None,
+        alternatives=normalized_alternatives,
+        current_index=int(payload.get("current_index", 0) or 0),
+        total_candidates=int(payload.get("total_candidates", 0) or 0),
         message=payload.get("message"),
     )
 

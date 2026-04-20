@@ -1,8 +1,8 @@
 // =============================================================
 // src/services/api.ts
 // =============================================================
-//const BASE = "http://localhost:8000";// اذا بتشغلينه لوكال خليه localhost:8000
-const BASE = "https://lassen-final-project-1.onrender.com";
+const BASE = "http://localhost:8000";// اذا بتشغلينه لوكال خليه localhost:8000
+//const BASE = "https://lassen-final-project-1.onrender.com";
 
 export class APIError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -152,6 +152,19 @@ export interface CompleteVerseResponse {
     era?: string;
     similarity?: number;
   };
+  alternatives?: Array<{
+    rank: number;
+    poem_verses: Array<{ verse_index?: number; verse: string; is_input_match?: boolean }>;
+    meta?: {
+      poet?: string;
+      meter?: string;
+      era?: string;
+      similarity?: number;
+    };
+    matched_verse?: string;
+  }>;
+  current_index?: number;
+  total_candidates?: number;
   message?: string;
 }
 
@@ -380,4 +393,3 @@ export async function interpretVersesStream(
 // // export const generateVerse   = (idea: string)   => post("/api/write/generate",   { idea });
 // // export const getTimeJourney  = (topic: string)  => post("/api/journey/explore",  { topic });
 // // export const interpretVerses = (verses: string) => post("/api/interpret/verses", { verses });
-
