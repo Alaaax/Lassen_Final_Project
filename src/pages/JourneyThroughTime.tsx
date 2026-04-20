@@ -34,7 +34,7 @@ const clampNarration = (text: string) => {
 
 const buildIntroNarration = (theme: string) =>
   clampNarration(
-    `تأهّب... الآن نفتح بوابة الزمن، ونرافق الشعراء عبر العصور، لنرى كيف تجلّى موضوع ${theme} في لغتهم وصورهم.`
+    `تَأهَّب... الآنَ نَفتَحُ بَوّابَةَ الزَّمَنِ، ونُرافِقُ الشُّعَراءَ عَبْرَ العُصورِ، لِنَرَى كَيْفَ تَجَلَّى مَوضوعُ ${theme} في لُغَتِهِم وصُوَرِهِم.`
   );
 
 const buildEraNarration = (era: JourneyEraPoem) => {
@@ -54,14 +54,12 @@ const getSceneNarration = (journeyData: JourneyResponse | null, currentStep: num
 
 const base64ToBlob = (b64Data: string, mimeType: string) => {
   const byteCharacters = atob(b64Data);
-  const buffer = new ArrayBuffer(byteCharacters.length);
-  const bytes = new Uint8Array(buffer);
-
+  const arrayBuffer = new ArrayBuffer(byteCharacters.length);
+  const bytes = new Uint8Array(arrayBuffer);
   for (let i = 0; i < byteCharacters.length; i += 1) {
     bytes[i] = byteCharacters.charCodeAt(i);
   }
-
-  return new Blob([buffer], { type: mimeType || "audio/mpeg" });
+  return new Blob([arrayBuffer], { type: mimeType || "audio/mpeg" });
 };
 
 const JourneyThroughTime = () => {
@@ -192,7 +190,6 @@ const JourneyThroughTime = () => {
   const currentEra = journeyData && !isIntroStep && !isSummaryStep
     ? journeyData.eras[currentStep - 1]
     : null;
-  const sceneProgress = maxStep > 0 ? Math.round((currentStep / maxStep) * 100) : 0;
 
   const sceneTitle = useMemo(() => {
     if (!journeyData) return "مشهد تمهيدي";
@@ -289,21 +286,10 @@ const JourneyThroughTime = () => {
 
                 {/* شريط المشهد + تقدم الرحلة */}
                 <div className="mb-6">
-                  <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                  <div className="flex flex-wrap items-center justify-center gap-2 mb-3">
                     <p className="font-ui text-xs text-muted-foreground">
                       المشهد الحالي: <span className="text-foreground">{sceneTitle}</span>
                     </p>
-                    <p className="font-ui text-xs text-muted-foreground">
-                      تقدم الرحلة: {sceneProgress}%
-                    </p>
-                  </div>
-                  <div className="h-1.5 bg-gold/15 rounded-full overflow-hidden">
-                    <motion.div
-                      className="h-full bg-gold"
-                      initial={{ width: 0 }}
-                      animate={{ width: `${sceneProgress}%` }}
-                      transition={{ duration: 0.35 }}
-                    />
                   </div>
                   <div className="flex flex-wrap items-center justify-center gap-2 mt-4">
                     <Button
