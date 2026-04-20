@@ -14,6 +14,9 @@ import requests
 from dotenv import load_dotenv
 from openai import OpenAI
 
+from typing import Generator
+import time
+
 from Fasserha_prompts import FASSERHA_SYSTEM_PROMPT, build_user_prompt
 
 load_dotenv()
@@ -472,3 +475,186 @@ def fasserha_api_response(poem_text: str, depth: str = "brief") -> dict[str, Any
         },
     }
     
+    
+    
+ 
+def _generate_explanation_stream(
+    poem_text: str,
+    meter_name: str,
+    era_name: str,
+    topic_name: str,
+    depth: str = "deep",
+) -> Generator[str, None, dict[str, Any]]:
+    """
+    نسخة streaming من _generate_explanation.
+    yields chunks of text كما تأتي من GPT.
+    في النهاية يرجع الـ dict المحلَّل (بعد جمع كل الأجزاء).
+    """
+    verses_count = _count_verses(poem_text)
+ 
+    user_prompt = build_user_prompt(
+        poem_text=poem_text,
+        meter_name=meter_name,
+        era_name=era_name,
+        topic_name=topic_name,
+        depth=depth,
+        verses_count=verses_count,
+    )
+ 
+    model_name = _optional_env("FASSERHA_LLM_MODEL", "gpt-4o")
+    max_tokens = _calc_max_tokens(depth, verses_count)
+ 
+    stream = _get_openai_client().chat.completions.create(
+        model=model_name,
+        max_tokens=max_tokens,
+        temperature=0.4,
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": FASSERHA_SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
+        stream=True,  # ← المفتاح
+    )
+ 
+    accumulated = ""
+    for chunk in stream:
+        delta = chunk.choices[0].delta.content if chunk.choices else None
+        if delta:
+            accumulated += delta
+            yield delta  # نبث القطعة للفرونت
+ 
+    # بعد انتهاء البث، نحلّل الـ JSON الكامل
+    parsed = _safe_parse_json(accumulated, depth, verses_count)
+    parsed["depth"] = depth
+ 
+    if depth == "deep" and not parsed.get("verses_breakdown"):
+        verses_list = _split_into_verses(poem_text)
+        parsed["verses_breakdown"] = [
+            {"verse": v, "meaning": "تعذّر توليد شرح تفصيلي لهذا البيت."}
+            for v in verses_list
+        ]
+ 
+    return parsed
+ 
+ 
+def fasserha_stream(
+    poem_text: str,
+    depth: str = "deep",
+) -> Generator[dict[str, Any], None, None]:
+    """
+    Generator يبث أحداث SSE:
+      {"event": "classify", "data": {...}}     — نتائج التصنيف
+      {"event": "chunk", "data": "نص جزئي"}    — قطع GPT
+      {"event": "done", "data": {...}}         — الرد النهائي الكامل
+      {"event": "error", "data": {...}}        — خطأ
+      {"event": "ping", "data": ""}            — keep-alive كل 15 ثانية
+    """
+    if not poem_text or not poem_text.strip():
+        yield {"event": "error", "data": {"error_type": "invalid_text", "message": "النص فارغ"}}
+        return
+ 
+    if depth not in ("brief", "deep"):
+        depth = "deep"
+ 
+    # ─── 1) التصنيف ─────────────────────────────────────────
+    try:
+        cls = _remote_classify(poem_text)
+    except Exception as e:
+        yield {"event": "error", "data": {"error_type": "classifier_unavailable", "message": str(e)}}
+        return
+ 
+    meter_result = cls.get("meter", {})
+    era_result = cls.get("era", {})
+    topic_result = cls.get("topic", {})
+ 
+    classify_payload = {
+        "meter": {
+            "arabic": meter_result.get("meter_ar", "غير محدد"),
+            "english": meter_result.get("meter_en", "unknown"),
+            "confidence": float(meter_result.get("confidence", 0.0)),
+        },
+        "era": {
+            "label": era_result.get("era", "غير محدد"),
+            "classical_prob": float(era_result.get("classical_probability", 0.0)),
+            "modern_prob": float(era_result.get("modern_probability", 0.0)),
+        },
+        "topic": {
+            "label": topic_result.get("topic", "غير محدد"),
+            "confidence": float(topic_result.get("confidence", 0.0)),
+            "top3": topic_result.get("top3", []),
+        },
+    }
+    yield {"event": "classify", "data": classify_payload}
+ 
+    # ─── 2) بث GPT ──────────────────────────────────────────
+    accumulated = ""
+    last_ping = time.time()
+ 
+    try:
+        gen = _generate_explanation_stream(
+            poem_text=poem_text,
+            meter_name=meter_result.get("meter_ar", "غير محدد"),
+            era_name=era_result.get("era", "غير محدد"),
+            topic_name=topic_result.get("topic", "غير محدد"),
+            depth=depth,
+        )
+ 
+        # نستهلك الـ generator يدوياً عشان نلتقط القيمة المُرجعة
+        gpt_result = None
+        try:
+            while True:
+                chunk = next(gen)
+                accumulated += chunk
+                yield {"event": "chunk", "data": chunk}
+ 
+                # ping كل 15 ثانية (يمنع Render من قطع الاتصال)
+                now = time.time()
+                if now - last_ping > 15:
+                    yield {"event": "ping", "data": ""}
+                    last_ping = now
+ 
+        except StopIteration as stop:
+            gpt_result = stop.value
+ 
+    except Exception as e:
+        yield {"event": "error", "data": {"error_type": "gpt_error", "message": str(e)}}
+        return
+ 
+    # ─── 3) التنظيف النهائي وإرسال الرد الكامل ──────────────
+    if not isinstance(gpt_result, dict):
+        gpt_result = _safe_parse_json(accumulated, depth, _count_verses(poem_text))
+ 
+    if gpt_result.get("status") == "error":
+        yield {
+            "event": "error",
+            "data": {
+                "error_type": gpt_result.get("error_type", "unknown"),
+                "message": gpt_result.get("message", "تعذّر التفسير"),
+            },
+        }
+        return
+ 
+    raw_breakdown = gpt_result.get("verses_breakdown", []) or []
+    cleaned_breakdown = []
+    for item in raw_breakdown:
+        if not isinstance(item, dict):
+            continue
+        verse_txt = _strip_decorations(str(item.get("verse", "")).strip())
+        meaning_txt = _strip_decorations(str(item.get("meaning", "")).strip())
+        if verse_txt and meaning_txt:
+            cleaned_breakdown.append({"verse": verse_txt, "meaning": meaning_txt})
+ 
+    final_payload = {
+        **classify_payload,
+        "depth": gpt_result.get("depth", depth),
+        "summary": _strip_decorations(gpt_result.get("summary", "")),
+        "explanation": _strip_decorations(gpt_result.get("explanation", "")),
+        "verses_breakdown": cleaned_breakdown,
+        "imagery": _strip_decorations(gpt_result.get("imagery", "")),
+        "meter_effect": _strip_decorations(gpt_result.get("meter_effect", "")),
+        "key_word": "",
+        "mood": _strip_decorations(gpt_result.get("mood", "")),
+    }
+ 
+    yield {"event": "done", "data": final_payload}
+ 

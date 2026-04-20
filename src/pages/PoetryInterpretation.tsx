@@ -11,7 +11,7 @@ import ArabicLettersBg from "@/components/ArabicLettersBg";
 import OrnamentalDivider from "@/components/OrnamentalDivider";
 import PageNavButton from "@/components/PageNavButton";
 import { useHistory } from "@/contexts/HistoryContext";
-import { APIError, interpretVerses } from "@/services/api";
+import { APIError, interpretVerses, interpretVersesStream } from "@/services/api";
 
 // ── Types ──────────────────────────────────────────────────────
 interface VerseBreakdown { verse: string; meaning: string }
@@ -56,12 +56,11 @@ function formatAsPoetry(raw: string): string {
   return lines.join("\n");
 }
 
-// ── API call ──────────────────────────────────────────────────
-async function interpretVerse(
+// ── API call (brief فقط — بدون streaming) ───────────────────
+async function interpretVerseBrief(
   verse: string,
-  depth: "brief" | "deep" = "brief"
 ): Promise<InterpretationResult> {
-  const response = await interpretVerses(verse, depth);
+  const response = await interpretVerses(verse, "brief");
 
   if (!response.success) {
     throw new APIError(422, response.message ?? "تعذّر التفسير");
@@ -74,7 +73,7 @@ async function interpretVerse(
     meter:              d.meter.arabic,
     tone:               d.topic.label,
     era:                d.era.label,
-    depth:              d.depth             ?? depth,
+    depth:              d.depth             ?? "brief",
     versesBreakdown:    d.verses_breakdown  ?? [],
     imagery:            d.imagery           ?? "",
     meterEffect:        d.meter_effect      ?? "",
@@ -96,10 +95,12 @@ const branchCards = [
 const InterpretDisplay = ({
   active,
   isDeepLoading,
+  deepProgress,
   onDeep,
 }: {
   active: InterpretationEntry;
   isDeepLoading: boolean;
+  deepProgress: string;
   onDeep: () => void;
 }) => {
   const r        = active.result;
@@ -201,7 +202,7 @@ const InterpretDisplay = ({
 
       {/* ── زر توضيح أعمق ── */}
       {!isDeep && (
-        <div className="flex justify-center mb-4">
+        <div className="flex flex-col items-center gap-2 mb-4">
           <Button
             variant="outline"
             size="sm"
@@ -214,6 +215,20 @@ const InterpretDisplay = ({
               : <Plus className="h-3 w-3" />}
             {isDeepLoading ? "جارٍ التعمق..." : "توضيح أعمق"}
           </Button>
+
+          {/* مؤشر التقدم أثناء الـ streaming */}
+          <AnimatePresence>
+            {isDeepLoading && deepProgress && (
+              <motion.p
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="font-kufi text-xs text-brown-500/80"
+              >
+                {deepProgress}
+              </motion.p>
+            )}
+          </AnimatePresence>
         </div>
       )}
     </motion.div>
@@ -227,6 +242,7 @@ const PoetryInterpretation = () => {
   const [activeId,       setActiveId]       = useState<string | null>(null);
   const [isLoading,      setIsLoading]      = useState(false);
   const [isDeepLoading,  setIsDeepLoading]  = useState(false);
+  const [deepProgress,   setDeepProgress]   = useState<string>("");
   const [inlineError,    setInlineError]    = useState<string | null>(null);
   const { addHistoryItem } = useHistory();
   const resultsRef         = useRef<HTMLDivElement>(null);
@@ -245,7 +261,7 @@ const PoetryInterpretation = () => {
     setInlineError(null);
     addHistoryItem("interpret", "تفسير الأبيات", input);
     try {
-      const data  = await interpretVerse(input, "brief");
+      const data  = await interpretVerseBrief(input);
       const entry: InterpretationEntry = {
         id:             crypto.randomUUID(),
         title:          summarize(input),
@@ -269,16 +285,59 @@ const PoetryInterpretation = () => {
   const handleDeep = async () => {
     if (!active) return;
     setIsDeepLoading(true);
+    setInlineError(null);
+    setDeepProgress("جارٍ تحليل القصيدة...");
+
+    const currentEntryId = active.id;
+    let chunkCount = 0;
+
     try {
-      const data = await interpretVerse(active.verse, "deep");
-      setEntries(prev =>
-        prev.map(e => e.id === active.id ? { ...e, result: data } : e)
-      );
+      await interpretVersesStream(active.verse, "deep", {
+        onClassify: () => {
+          setDeepProgress("جارٍ توليد التفسير التفصيلي...");
+        },
+
+        onChunk: () => {
+          chunkCount += 1;
+          // تحديث بسيط للمؤشر كل عدة قطع
+          if (chunkCount % 10 === 0) {
+            setDeepProgress(`جارٍ التوليد... `);
+          }
+        },
+
+        onDone: (data) => {
+          const newResult: InterpretationResult = {
+            mainInterpretation: data.explanation,
+            summary:            data.summary           ?? "",
+            meter:              data.meter.arabic,
+            tone:               data.topic.label,
+            era:                data.era.label,
+            depth:              data.depth             ?? "deep",
+            versesBreakdown:    data.verses_breakdown  ?? [],
+            imagery:            data.imagery           ?? "",
+            meterEffect:        data.meter_effect      ?? "",
+          };
+
+          setEntries(prev =>
+            prev.map(e => e.id === currentEntryId ? { ...e, result: newResult } : e)
+          );
+          setIsDeepLoading(false);
+          setDeepProgress("");
+        },
+
+        onError: (_errorType, message) => {
+          setInlineError(message || "تعذّر التعمق حالياً.");
+          setIsDeepLoading(false);
+          setDeepProgress("");
+        },
+      });
     } catch (error) {
-      const msg = error instanceof APIError ? error.message : "تعذّر التعمق حالياً.";
+      const msg = error instanceof APIError
+        ? error.message
+        : "تعذّر التعمق حالياً. حاول مرة أخرى.";
       setInlineError(msg);
-    } finally {
       setIsDeepLoading(false);
+      setDeepProgress("");
     }
   };
 
@@ -349,6 +408,7 @@ const PoetryInterpretation = () => {
             <InterpretDisplay
               active={active}
               isDeepLoading={isDeepLoading}
+              deepProgress={deepProgress}
               onDeep={handleDeep}
             />
           )}

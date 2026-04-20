@@ -212,6 +212,90 @@ export interface InterpretResponse {
 export const interpretVerses = (poem: string, depth: "brief" | "deep" = "brief") =>
   post<InterpretResponse>("/api/interpret/verses", { poem, depth });
 
+export interface InterpretStreamHandlers {
+  onClassify?: (data: {
+    meter: InterpretMeter;
+    era: InterpretEra;
+    topic: InterpretTopic;
+  }) => void;
+  onChunk?: (chunk: string) => void;
+  onDone?: (data: InterpretData) => void;
+  onError?: (errorType: string, message: string) => void;
+}
+ 
+export async function interpretVersesStream(
+  poem: string,
+  depth: "brief" | "deep",
+  handlers: InterpretStreamHandlers,
+): Promise<void> {
+  const res = await fetch(`${BASE}/api/interpret/verses/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ poem, depth }),
+  });
+ 
+  if (!res.ok || !res.body) {
+    handlers.onError?.("network_error", `خطأ ${res.status}`);
+    return;
+  }
+ 
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+ 
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+ 
+    buffer += decoder.decode(value, { stream: true });
+ 
+    // SSE events مفصولة بـ "\n\n"
+    const events = buffer.split("\n\n");
+    buffer = events.pop() ?? ""; // آخر جزء قد يكون ناقص
+ 
+    for (const evt of events) {
+      if (!evt.trim()) continue;
+ 
+      const lines = evt.split("\n");
+      let eventType = "message";
+      let dataStr = "";
+ 
+      for (const line of lines) {
+        if (line.startsWith("event: ")) {
+          eventType = line.slice(7).trim();
+        } else if (line.startsWith("data: ")) {
+          dataStr = line.slice(6);
+        }
+      }
+ 
+      if (!dataStr) continue;
+ 
+      try {
+        const data = JSON.parse(dataStr);
+ 
+        switch (eventType) {
+          case "classify":
+            handlers.onClassify?.(data);
+            break;
+          case "chunk":
+            handlers.onChunk?.(data);
+            break;
+          case "done":
+            handlers.onDone?.(data);
+            break;
+          case "error":
+            handlers.onError?.(data.error_type ?? "unknown", data.message ?? "خطأ");
+            break;
+          case "ping":
+            // keep-alive — تجاهل
+            break;
+        }
+      } catch {
+        // تجاهل الأحداث المعطوبة
+      }
+    }
+  }
+}
 // TODO:
 // export const generateVerse   = (idea: string)   => post("/api/write/generate",   { idea });
 

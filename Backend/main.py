@@ -9,6 +9,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
+import json
+from fastapi.responses import StreamingResponse
+ 
+
 # imports المشتركة
 from schemas import (
     TreasuresRequest, TreasuresResponse, SiwarInfo,
@@ -25,6 +29,10 @@ from schemas import (
 # 1) Backend/services/*
 # 2) Backend/services/* مع تشغيل من جذر المشروع
 # 3) ملفات مسطحة في نفس المجلد (بيئة التطوير السريعة)
+# ─────────────────────────────────────────────────────────────
+# استبدل قسم الـ try/except للـ imports بهذا (تنظيف التكرار فقط)
+# ─────────────────────────────────────────────────────────────
+
 try:
     from services.siwar_service import get_siwar_definition
     from services.ai_service import explain_word, get_mood_response
@@ -32,7 +40,7 @@ try:
     from services.poetry_retriever import get_poems_for_mood, get_db_stats
     from services.journey_service import build_time_journey
     from services.tts_service import synthesize_journey_speech
-    from services.fasserha_service import fasserha_api_response
+    from services.fasserha_service import fasserha_api_response, fasserha_stream
     from services.help_me_write_service import generate_poetry_response, complete_poem_response
 except ModuleNotFoundError:
     try:
@@ -42,7 +50,7 @@ except ModuleNotFoundError:
         from Backend.services.poetry_retriever import get_poems_for_mood, get_db_stats
         from Backend.services.journey_service import build_time_journey
         from Backend.services.tts_service import synthesize_journey_speech
-        from Backend.services.fasserha_service import fasserha_api_response
+        from Backend.services.fasserha_service import fasserha_api_response, fasserha_stream
         from Backend.services.help_me_write_service import generate_poetry_response, complete_poem_response
     except ModuleNotFoundError:
         from siwar_service import get_siwar_definition
@@ -51,8 +59,9 @@ except ModuleNotFoundError:
         from poetry_retriever import get_poems_for_mood, get_db_stats
         from journey_service import build_time_journey
         from tts_service import synthesize_journey_speech
-        from fasserha_service import fasserha_api_response
+        from fasserha_service import fasserha_api_response, fasserha_stream
         from help_me_write_service import generate_poetry_response, complete_poem_response
+        
 load_dotenv()
 
 app = FastAPI(title="بيت القصيد API", version="1.0.0")
@@ -408,6 +417,36 @@ async def interpret_verses_api(req: InterpretRequest):
             "mood": data.get("mood", ""),
         },
     )
+    
+@app.post("/api/interpret/verses/stream")
+async def interpret_verses_stream(req: InterpretRequest):
+    """
+    Streaming endpoint لـ deep interpretation.
+    يبث Server-Sent Events للفرونت ليتفادى مهلة Render.
+    """
+ 
+    def event_generator():
+        try:
+            for event in fasserha_stream(req.poem, req.depth):
+                # تنسيق SSE: "event: TYPE\ndata: JSON\n\n"
+                event_type = event.get("event", "message")
+                event_data = event.get("data", "")
+                data_str = json.dumps(event_data, ensure_ascii=False) if not isinstance(event_data, str) else json.dumps(event_data, ensure_ascii=False)
+                yield f"event: {event_type}\ndata: {data_str}\n\n"
+        except Exception as e:
+            error_data = json.dumps({"error_type": "stream_error", "message": str(e)}, ensure_ascii=False)
+            yield f"event: error\ndata: {error_data}\n\n"
+ 
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # ← مهم: يمنع buffering في nginx/proxy
+            "Connection": "keep-alive",
+        },
+    )
+ 
 
 # =============================================================
 # TODO: باقي الصفحات
