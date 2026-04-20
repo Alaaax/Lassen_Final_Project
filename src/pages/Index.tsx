@@ -66,56 +66,135 @@ const fadeUp = {
   }),
 };
 
-const RoadmapFeatures = ({ onSelect }: { onSelect: (url: string) => void }) => {
-  const RADIUS = 38;
+const FeatureTabs = ({
+  onSelect,
+  className = "",
+}: {
+  onSelect: (url: string) => void;
+  className?: string;
+}) => {
   return (
-    // الحاوية مربعة بشكل صريح — شرط أساسي لتوازن الدائرة
-    <div className="relative mx-auto my-8" style={{ width: "520px", height: "520px", maxWidth: "90vw" }}>
-      <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
-        <circle cx="50" cy="50" r={RADIUS} fill="none" stroke="hsl(var(--brown-300))" strokeWidth="0.25" strokeDasharray="0.6 1.2" opacity="0.4" />
-        {features.map((_, i) => {
-          const angle = (i / features.length) * Math.PI * 2 - Math.PI / 2;
-          const x = 50 + Math.cos(angle) * RADIUS;
-          const y = 50 + Math.sin(angle) * RADIUS;
-          return (
-            <line key={i} x1="50" y1="50" x2={x} y2={y}
-              stroke="hsl(var(--brown-400))" strokeWidth="0.2" strokeDasharray="0.6 0.8" opacity="0.35" />
-          );
-        })}
-      </svg>
+    <div className={`mx-auto w-full max-w-[640px] flex flex-wrap justify-center gap-x-6 gap-y-2.5 ${className}`}>
+      {features.map((feature, i) => (
+        <motion.button
+          key={`tab-${feature.url}`}
+          initial={{ opacity: 0, y: 8 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ delay: 0.04 * i, duration: 0.35 }}
+          onClick={() => onSelect(feature.url)}
+          className="inline-flex items-center gap-1.5 font-kufi text-sm text-brown-700/90 transition-colors hover:text-brown-900"
+        >
+          <feature.icon className="h-3.5 w-3.5" />
+          <span className="font-kufi text-sm">{feature.title}</span>
+        </motion.button>
+      ))}
+    </div>
+  );
+};
+
+const RoadmapFeatures = ({ onSelect }: { onSelect: (url: string) => void }) => {
+  const ROADMAP_CENTER = 50;
+  const ROADMAP_RADIUS = 34;
+  const desktopRoadmapNodes = features.map((feature, i) => {
+    const angle = (i / features.length) * Math.PI * 2 - Math.PI / 2;
+    return {
+      ...feature,
+      x: ROADMAP_CENTER + Math.cos(angle) * ROADMAP_RADIUS,
+      y: ROADMAP_CENTER + Math.sin(angle) * ROADMAP_RADIUS,
+    };
+  });
+
+  return (
+    <div className="w-full max-w-5xl mx-auto">
+      <div className="md:hidden grid grid-cols-2 gap-3 mt-6">
+        {features.map((feature, i) => (
+          <motion.button
+            key={`mobile-${feature.url}`}
+            initial={{ opacity: 0, y: 10 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay: 0.08 * i, duration: 0.35 }}
+            onClick={() => onSelect(feature.url)}
+            className="rounded-2xl bg-brown-soft border border-brown-300/50 shadow-[var(--shadow-soft)] p-4 text-center transition-all hover:border-gold/50"
+          >
+            <feature.icon className="h-5 w-5 text-brown-700 mx-auto mb-2" />
+            <span className="font-kufi text-sm text-brown-700">{feature.title}</span>
+          </motion.button>
+        ))}
+      </div>
 
       <motion.div
-        initial={{ opacity: 0, scale: 0.5 }} whileInView={{ opacity: 1, scale: 1 }}
-        viewport={{ once: true }} transition={{ duration: 0.6 }}
-        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10"
+        initial="hidden"
+        whileInView="visible"
+        viewport={{ once: true, amount: 0.35 }}
+        variants={{
+          hidden: { opacity: 0, y: 18 },
+          visible: {
+            opacity: 1,
+            y: 0,
+            transition: { duration: 0.45, staggerChildren: 0.1, delayChildren: 0.12 },
+          },
+        }}
+        className="hidden md:block relative mx-auto mt-10 h-[560px] max-w-[760px]"
       >
-        <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-full bg-brown-gradient flex flex-col items-center justify-center shadow-[var(--shadow-warm)] border-2 border-gold/30">
-          <span className="font-display text-3xl sm:text-4xl text-primary-foreground">لَسِنْ</span>
-          <span className="font-kufi text-[10px] sm:text-xs text-primary-foreground/70 mt-1">رحلة الشعر</span>
-        </div>
-      </motion.div>
+        <svg className="absolute inset-0 w-full h-full pointer-events-none z-0" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
+          <circle
+            cx={ROADMAP_CENTER}
+            cy={ROADMAP_CENTER}
+            r={ROADMAP_RADIUS}
+            fill="none"
+            stroke="hsl(var(--brown-300))"
+            strokeWidth="0.25"
+            strokeDasharray="0.8 1.2"
+            opacity="0.35"
+          />
+          {desktopRoadmapNodes.map((node, i) => (
+            <motion.line
+              key={`line-${node.url}`}
+              x1={ROADMAP_CENTER}
+              y1={ROADMAP_CENTER}
+              x2={node.x}
+              y2={node.y}
+              stroke="hsl(var(--brown-400))"
+              strokeWidth="0.22"
+              strokeDasharray="0.8 1"
+              initial={{ pathLength: 0, opacity: 0 }}
+              whileInView={{ pathLength: 1, opacity: 0.32 }}
+              viewport={{ once: true, amount: 0.35 }}
+              transition={{ duration: 0.38, delay: 0.15 + i * 0.07 }}
+            />
+          ))}
+        </svg>
 
-      {features.map((feature, i) => {
-        const angle = (i / features.length) * Math.PI * 2 - Math.PI / 2;
-        const x = 50 + Math.cos(angle) * RADIUS;
-        const y = 50 + Math.sin(angle) * RADIUS;
-        return (
+        <motion.div
+          variants={{ hidden: { opacity: 0, scale: 0.55 }, visible: { opacity: 1, scale: 1 } }}
+          transition={{ duration: 0.45 }}
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10"
+        >
+          <div className="w-32 h-32 lg:w-36 lg:h-36 rounded-full bg-brown-gradient flex flex-col items-center justify-center shadow-[var(--shadow-warm)] border-2 border-gold/30">
+            <span className="font-display text-3xl lg:text-4xl text-primary-foreground">لَسِنْ</span>
+            <span className="font-kufi text-[11px] lg:text-xs text-primary-foreground/75 mt-1">رحلة الشعر</span>
+          </div>
+        </motion.div>
+
+        {desktopRoadmapNodes.map((node) => (
           <motion.button
-            key={feature.url}
-            initial={{ opacity: 0, scale: 0.7 }} whileInView={{ opacity: 1, scale: 1 }}
-            viewport={{ once: true }} transition={{ delay: 0.2 + i * 0.12, duration: 0.5 }}
-            whileHover={{ scale: 1.08, y: -4 }}
-            onClick={() => onSelect(feature.url)}
-            className="absolute -translate-x-1/2 -translate-y-1/2 group"
-            style={{ left: `${x}%`, top: `${y}%` }}
+            key={node.url}
+            variants={{ hidden: { opacity: 0, scale: 0.8 }, visible: { opacity: 1, scale: 1 } }}
+            transition={{ duration: 0.36 }}
+            whileHover={{ scale: 1.05, y: -3 }}
+            onClick={() => onSelect(node.url)}
+            className="absolute -translate-x-1/2 -translate-y-1/2 z-10 group"
+            style={{ left: `${node.x}%`, top: `${node.y}%` }}
           >
-            <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl bg-brown-soft border border-brown-300/50 shadow-[var(--shadow-soft)] flex flex-col items-center justify-center p-2 text-center transition-all hover:border-gold/50 hover:shadow-[var(--shadow-warm)]">
-              <feature.icon className="h-5 w-5 sm:h-6 sm:w-6 text-brown-700 mb-1.5 group-hover:scale-110 transition-transform" />
-              <span className="font-kufi text-[11px] sm:text-xs text-brown-700 leading-tight">{feature.title}</span>
+            <div className="w-36 h-28 rounded-2xl bg-brown-soft border border-brown-300/50 shadow-[var(--shadow-soft)] flex flex-col items-center justify-center px-3 text-center transition-all hover:border-gold/50 hover:shadow-[var(--shadow-warm)]">
+              <node.icon className="h-5 w-5 text-brown-700 mb-2 group-hover:scale-110 transition-transform" />
+              <span className="font-kufi text-sm text-brown-700 leading-tight">{node.title}</span>
             </div>
           </motion.button>
-        );
-      })}
+        ))}
+      </motion.div>
     </div>
   );
 };
@@ -125,6 +204,17 @@ const Index = () => {
 
   return (
     <div className="min-h-screen relative bg-warm-page">
+      <section className="relative z-20 px-6 pt-6">
+        <div className="max-w-6xl mx-auto space-y-1">
+          <FeatureTabs onSelect={(url) => navigate(url)} className="mb-0" />
+          <div className="mx-auto w-full max-w-[640px] flex items-center justify-center gap-2">
+            <div className="h-px flex-1 bg-brown-400/50" />
+            <span className="text-brown-500 text-lg">✦</span>
+            <div className="h-px flex-1 bg-brown-400/50" />
+          </div>
+        </div>
+      </section>
+
       <section className="relative min-h-screen flex items-center justify-center px-6 overflow-hidden">
         <HeroFloatingLetters />
         <div className="relative z-10 text-center max-w-3xl mx-auto">
