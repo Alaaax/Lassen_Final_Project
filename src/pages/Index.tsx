@@ -196,7 +196,7 @@ const Index = () => {
             <motion.h2 variants={fadeUp} custom={0} className="font-display text-3xl md:text-4xl text-gradient-brown mb-6">لماذا لَسِنْ؟</motion.h2>
             <motion.p variants={fadeUp} custom={1} className="font-body text-brown-700/80 max-w-2xl mx-auto leading-loose mb-12">
               نؤمن أن الشعر ليس حكراً على المتخصصين. هو مرآة مشاعرنا وتاريخنا ولغتنا.
-              صمّمنا لَسِنْ ليكون بوابتك إلى عالم الشعر — بلا تعقيد، بلا حواجز، وبكل متعة.
+              صمّمنا لَسِنْ ليكون بوابتك إلى عالم الشعر بلا تعقيد، بلا حواجز، وبكل متعة.
             </motion.p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {[
@@ -226,7 +226,7 @@ const Index = () => {
       </section>
 
       <footer className="py-8 px-6 text-center border-t border-brown-200/40">
-        <p className="font-display text-base text-brown-600/70">لَسِنْ — حيث يلتقي الشعر بالتقنية ✦</p>
+        <p className="font-display text-base text-brown-600/70">لَسِنْ ... حيث يلتقي الشعر بالتقنية ✦</p>
       </footer>
     </div>
   );
