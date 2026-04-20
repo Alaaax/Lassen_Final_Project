@@ -24,6 +24,16 @@ const eraGlowClasses = [
 ];
 
 const MAX_NARRATION_CHARS = 1700;
+const THEMES_WITH_DIACRITICS: Record<string, string> = {
+  "غزل": "الغَزَلِ",
+  "عتاب": "العِتابِ",
+  "حزينه": "الحَزِينَةِ",
+  "هجاء": "الهِجاءِ",
+  "شوق": "الشَّوْقِ",
+  "فراق": "الفِراقِ",
+  "مدح": "المَدْحِ",
+  "رومنسيه": "الرُّومانسِيَّةِ",
+};
 
 const clampNarration = (text: string) => {
   const normalized = text.replace(/\s+/g, " ").trim();
@@ -32,15 +42,16 @@ const clampNarration = (text: string) => {
     : normalized;
 };
 
+const getNarratedTheme = (theme: string) => THEMES_WITH_DIACRITICS[theme] ?? theme;
+
 const buildIntroNarration = (theme: string) =>
   clampNarration(
-    `تَأهَّب... الآنَ نَفتَحُ بَوّابَةَ الزَّمَنِ، ونُرافِقُ الشُّعَراءَ عَبْرَ العُصورِ، لِنَرَى كَيْفَ تَجَلَّى مَوضوعُ ${theme} في لُغَتِهِم وصُوَرِهِم.`
+    `تَأهَّب... الآنَ نَفتَحُ بَوّابَةَ الزَّمَنِ، ونُرافِقُ الشُّعَراءَ عَبْرَ العُصورِ، لِنَرَى كَيْفَ تَجَلَّى مَوضوعُ ${getNarratedTheme(theme)} في لُغَتِهِم وصُوَرِهِم.`
   );
 
 const buildEraNarration = (era: JourneyEraPoem) => {
-  const poetName = era.poet_name?.trim() || "شاعر من هذا العصر";
   const verses = era.verses.slice(0, 4).join(" ... ");
-  return clampNarration(`وصلنا إلى ${era.era_label}. أنصت الآن لصوت ${poetName}. ${verses}`);
+  return clampNarration(verses);
 };
 
 const getSceneNarration = (journeyData: JourneyResponse | null, currentStep: number, selectedTheme: string) => {
