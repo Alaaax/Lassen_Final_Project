@@ -7,8 +7,12 @@ from __future__ import annotations
 
 import os
 import re
+import html
+import json
+from difflib import SequenceMatcher
 from functools import lru_cache
 from typing import Any
+from urllib.request import Request, urlopen
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -87,6 +91,14 @@ MIN_ALLOWED_SIMILARITY = float(os.getenv("WRITE_COMPLETE_MIN_SIMILARITY", "0.85"
 MATCH_COUNT = int(os.getenv("WRITE_COMPLETE_MATCH_COUNT", "24"))
 TOP_K_CANDIDATES = int(os.getenv("WRITE_COMPLETE_TOP_K", "3"))
 MAX_SEARCH_QUERIES = int(os.getenv("WRITE_COMPLETE_MAX_SEARCH_QUERIES", "4"))
+ALDIWAN_FALLBACK_ENABLED = os.getenv("WRITE_COMPLETE_ENABLE_ALDIWAN_FALLBACK", "true").lower() == "true"
+ALDIWAN_TOP_K = int(os.getenv("WRITE_COMPLETE_ALDIWAN_TOP_K", "2"))
+ALDIWAN_MIN_SCORE = float(os.getenv("WRITE_COMPLETE_ALDIWAN_MIN_SCORE", "0.88"))
+ALDIWAN_TIMEOUT_SEC = float(os.getenv("WRITE_COMPLETE_ALDIWAN_TIMEOUT_SEC", "12"))
+ALDIWAN_MAX_RESULTS = int(os.getenv("WRITE_COMPLETE_ALDIWAN_MAX_RESULTS", "5"))
+ALDIWAN_POEM_URL_PATTERN = re.compile(r"https?://(?:www\.)?aldiwan\.net/poem\d+\.html")
+ALDIWAN_REQUIRE_EXACT_MATCH = os.getenv("WRITE_COMPLETE_ALDIWAN_REQUIRE_EXACT_MATCH", "true").lower() == "true"
+ALDIWAN_MIN_EXACT_CHARS = int(os.getenv("WRITE_COMPLETE_ALDIWAN_MIN_EXACT_CHARS", "8"))
 
 RPC_MATCH_VERSES = os.getenv("WRITE_COMPLETE_RPC_MATCH", "match_verses")
 RPC_GET_FULL_POEM = os.getenv("WRITE_COMPLETE_RPC_FULL_POEM", "get_full_poem")
@@ -149,6 +161,241 @@ def _safe_text(value: Any, default: str) -> str:
         return default
     text = str(value).strip()
     return text if text else default
+
+
+def _call_tavily_search_aldiwan(query_text: str) -> list[dict[str, Any]]:
+    api_key = (os.getenv("TAVILY_API_KEY") or "").strip()
+    if not api_key:
+        return []
+
+    payload = {
+        "api_key": api_key,
+        "query": f"site:aldiwan.net/poem {query_text}",
+        "max_results": max(1, ALDIWAN_MAX_RESULTS),
+        "include_raw_content": False,
+        "include_answer": False,
+        "search_depth": "basic",
+        "include_domains": ["aldiwan.net"],
+    }
+    req = Request(
+        url="https://api.tavily.com/search",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(req, timeout=ALDIWAN_TIMEOUT_SEC) as response:
+            raw = response.read().decode("utf-8", errors="ignore")
+    except Exception:
+        return []
+
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+
+    results = parsed.get("results")
+    return results if isinstance(results, list) else []
+
+
+def _extract_aldiwan_poem_urls(results: list[dict[str, Any]]) -> list[str]:
+    urls: list[str] = []
+    seen: set[str] = set()
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        candidate_url = _safe_text(item.get("url"), "")
+        match = ALDIWAN_POEM_URL_PATTERN.search(candidate_url)
+        if not match:
+            continue
+        poem_url = match.group(0)
+        if poem_url in seen:
+            continue
+        seen.add(poem_url)
+        urls.append(poem_url)
+    return urls
+
+
+def _extract_plain_text(fragment: str) -> str:
+    text = re.sub(r"<[^>]+>", " ", fragment or "")
+    text = html.unescape(text)
+    text = text.replace("\xa0", " ")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _fetch_aldiwan_poem(poem_url: str) -> dict[str, Any] | None:
+    req = Request(
+        url=poem_url,
+        headers={"User-Agent": "Mozilla/5.0 (compatible; LassenBot/1.0)"},
+        method="GET",
+    )
+    try:
+        with urlopen(req, timeout=ALDIWAN_TIMEOUT_SEC) as response:
+            page_html = response.read().decode("utf-8", errors="ignore")
+    except Exception:
+        return None
+
+    content_match = re.search(
+        r'id="poem_content"[^>]*>(.*?)<div class="header-center">',
+        page_html,
+        flags=re.S,
+    )
+    if not content_match:
+        return None
+
+    content_html = content_match.group(1)
+    verse_chunks = re.findall(r"<h3[^>]*>(.*?)</h3>", content_html, flags=re.S)
+    verses: list[str] = []
+    seen_norm: set[str] = set()
+    for chunk in verse_chunks:
+        verse_text = _extract_plain_text(chunk)
+        if len(ARABIC_LETTERS.findall(verse_text)) < 4:
+            continue
+        norm = normalize_for_matching(verse_text)
+        if not norm or norm in seen_norm:
+            continue
+        seen_norm.add(norm)
+        verses.append(verse_text)
+
+    if not verses:
+        return None
+
+    title_match = re.search(r'<meta property="og:title" content="([^"]+)"', page_html)
+    title = _safe_text(_extract_plain_text(title_match.group(1) if title_match else ""), "")
+    poet_match = re.search(r'<meta name="author" content="([^"]+)"', page_html)
+    poet = _safe_text(_extract_plain_text(poet_match.group(1) if poet_match else ""), "مجهول")
+
+    return {
+        "url": poem_url,
+        "title": title,
+        "poet": poet or "مجهول",
+        "verses": verses,
+    }
+
+
+def _score_aldiwan_candidate(user_input: str, poem_verses: list[str]) -> float:
+    input_lines = _normalized_input_lines(user_input)
+    if not input_lines or not poem_verses:
+        return 0.0
+
+    best_score = 0.0
+    for verse in poem_verses:
+        verse_norm = normalize_for_matching(verse)
+        if not verse_norm:
+            continue
+        for line in input_lines:
+            if not line:
+                continue
+            if line in verse_norm or verse_norm in line:
+                best_score = max(best_score, 1.0)
+                continue
+            ratio = SequenceMatcher(a=line, b=verse_norm).ratio()
+            best_score = max(best_score, ratio)
+
+    return round(max(0.0, min(1.0, best_score)), 4)
+
+
+def _has_exact_aldiwan_match(user_input: str, poem_verses: list[str]) -> bool:
+    input_lines = _normalized_input_lines(user_input)
+    if not input_lines or not poem_verses:
+        return False
+
+    min_chars = max(4, ALDIWAN_MIN_EXACT_CHARS)
+    strong_lines = [line for line in input_lines if len(ARABIC_LETTERS.findall(line)) >= min_chars]
+    if not strong_lines:
+        return False
+
+    normalized_verses = [normalize_for_matching(v) for v in poem_verses]
+    normalized_verses = [v for v in normalized_verses if v]
+    if not normalized_verses:
+        return False
+
+    for line in strong_lines:
+        if any((line in verse) or (verse in line) for verse in normalized_verses):
+            return True
+    return False
+
+
+def find_poem_candidates_on_aldiwan(user_input: str, top_k: int = ALDIWAN_TOP_K) -> list[dict[str, Any]]:
+    if not ALDIWAN_FALLBACK_ENABLED:
+        return []
+
+    queries = _split_search_queries(user_input)
+    if not queries:
+        return []
+
+    discovered_urls: list[str] = []
+    seen_urls: set[str] = set()
+    for query in queries:
+        results = _call_tavily_search_aldiwan(query)
+        for poem_url in _extract_aldiwan_poem_urls(results):
+            if poem_url in seen_urls:
+                continue
+            seen_urls.add(poem_url)
+            discovered_urls.append(poem_url)
+        if len(discovered_urls) >= max(4, top_k * 3):
+            break
+
+    if not discovered_urls:
+        return []
+
+    ranked: list[dict[str, Any]] = []
+    for poem_url in discovered_urls:
+        poem_data = _fetch_aldiwan_poem(poem_url)
+        if not poem_data:
+            continue
+        has_exact_match = _has_exact_aldiwan_match(user_input, poem_data["verses"])
+        if ALDIWAN_REQUIRE_EXACT_MATCH and not has_exact_match:
+            continue
+        score = _score_aldiwan_candidate(user_input, poem_data["verses"])
+        if score < max(0.0, min(1.0, ALDIWAN_MIN_SCORE)):
+            continue
+        ranked.append(
+            {
+                "poem_url": poem_data["url"],
+                "poem_title": poem_data["title"],
+                "poet": poem_data["poet"],
+                "similarity": score,
+                "verses": poem_data["verses"],
+            }
+        )
+
+    ranked.sort(key=lambda item: float(item.get("similarity") or 0.0), reverse=True)
+    final_candidates: list[dict[str, Any]] = []
+    input_lines = _normalized_input_lines(user_input)
+    for idx, item in enumerate(ranked[: max(1, top_k)], start=1):
+        poem_verses = []
+        for verse_idx, verse in enumerate(item["verses"], start=1):
+            verse_norm = normalize_for_matching(verse)
+            is_match = verse_norm in input_lines or any(
+                verse_norm and (verse_norm in user_line or user_line in verse_norm)
+                for user_line in input_lines
+            )
+            poem_verses.append(
+                {
+                    "verse_index": verse_idx,
+                    "verse": verse,
+                    "is_input_match": is_match,
+                }
+            )
+
+        final_candidates.append(
+            {
+                "rank": idx,
+                "poem_verses": poem_verses,
+                "meta": {
+                    "poet": item.get("poet") or "مجهول",
+                    "meter": "-",
+                    "era": "-",
+                    "similarity": float(item.get("similarity") or 0.0),
+                },
+                "matched_verse": poem_verses[0]["verse"] if poem_verses else None,
+                "source": "web",
+                "source_label": "الديوان",
+            }
+        )
+
+    return final_candidates
 
 
 def validate_complete_input(text: str) -> tuple[bool, str]:
@@ -341,6 +588,23 @@ def help_me_write_complete_api_response(user_input: str) -> dict[str, Any]:
         }
 
     if not matched_candidates:
+        aldiwan_candidates = find_poem_candidates_on_aldiwan(
+            user_input.strip(),
+            top_k=max(1, ALDIWAN_TOP_K),
+        )
+        if aldiwan_candidates:
+            primary = aldiwan_candidates[0]
+            return {
+                "success": True,
+                "found": True,
+                "poem_verses": primary.get("poem_verses", []),
+                "meta": primary.get("meta", {}),
+                "alternatives": aldiwan_candidates,
+                "current_index": 0,
+                "total_candidates": len(aldiwan_candidates),
+                "message": "تم العثور على نتيجة من الديوان.",
+            }
+
         return {
             "success": True,
             "found": False,
@@ -382,6 +646,8 @@ def help_me_write_complete_api_response(user_input: str) -> dict[str, Any]:
                     "similarity": float(matched_verse.get("similarity") or 0.0),
                 },
                 "matched_verse": matched_verse.get("verse"),
+                "source": "database",
+                "source_label": "قاعدة البيانات",
             }
         )
 

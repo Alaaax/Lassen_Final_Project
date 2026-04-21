@@ -43,6 +43,7 @@ interface CompletePoemResult {
   currentIndex: number;
   totalCandidates: number;
 }
+type CompleteAlternative = NonNullable<CompleteVerseResponse["alternatives"]>[number];
 
 function buildCompleteResultText(
   alt: NonNullable<CompleteVerseResponse["alternatives"]>[number],
@@ -50,9 +51,11 @@ function buildCompleteResultText(
   rank: number
 ): string {
   const meta = alt.meta;
-  const header = meta
-    ? `الشاعر: ${meta.poet || "مجهول"}\nالبحر: ${meta.meter || "-"}\nالعصر: ${meta.era || "-"}\n`
-    : "";
+  const poetLine = `الشاعر: ${meta?.poet || "مجهول"}\n`;
+  const sourceLine = alt.source === "web"
+    ? `المصدر: ${alt.source_label || "الديوان"}\n`
+    : "المصدر: قاعدة البيانات\n";
+  const header = `${sourceLine}${poetLine}`;
   const hint = totalCandidates > 1 ? `\nالنتيجة ${rank} من ${totalCandidates}\n` : "\n";
   const poemLines = (alt.poem_verses || []).map((v) => v.verse || "").filter(Boolean).join("\n");
   return `${header}${hint}${poemLines}`.trim();
@@ -75,23 +78,35 @@ async function completePoem(partial: string): Promise<CompletePoemResult> {
     throw new Error(response.message || "هذا البيت غير موجود في قاعدة البيانات.");
   }
 
-  const alternatives = response.alternatives || [];
-  const fallbackAlt = {
+  const alternatives: CompleteAlternative[] = Array.isArray(response.alternatives)
+    ? response.alternatives.map((alt) => {
+        const source: CompleteAlternative["source"] = alt.source === "web" ? "web" : "database";
+        return {
+          ...alt,
+          source,
+          source_label: alt.source_label || (source === "web" ? "الديوان" : "قاعدة البيانات"),
+        };
+      })
+    : [];
+  const fallbackAlt: CompleteAlternative = {
     rank: 1,
     poem_verses: response.poem_verses || [],
     meta: response.meta,
     matched_verse: undefined,
+    source: "database",
+    source_label: "قاعدة البيانات",
   };
-  const finalAlternatives = alternatives.length > 0 ? alternatives : [fallbackAlt];
+  const finalAlternatives: CompleteAlternative[] = alternatives.length > 0 ? alternatives : [fallbackAlt];
   if ((finalAlternatives[0]?.poem_verses || []).length === 0) {
     throw new Error(response.message || "تم العثور على البيت لكن لم نتمكن من عرض القصيدة.");
   }
   const totalCandidates = response.total_candidates || finalAlternatives.length;
   const currentIndex = Math.max(0, Math.min(response.current_index || 0, finalAlternatives.length - 1));
+  const selectedAlternative = finalAlternatives[currentIndex] || fallbackAlt;
   const text = buildCompleteResultText(
-    finalAlternatives[currentIndex],
+    selectedAlternative,
     totalCandidates,
-    (finalAlternatives[currentIndex]?.rank || currentIndex + 1)
+    (selectedAlternative.rank || currentIndex + 1)
   );
   return {
     text,

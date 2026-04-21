@@ -220,6 +220,8 @@ class WriteCompleteAlternative(BaseModel):
     poem_verses: list[CompletedPoemVerse] = []
     meta: Optional[WriteCompleteMeta] = None
     matched_verse: Optional[str] = None
+    source: Optional[str] = None
+    source_label: Optional[str] = None
 
 
 class WriteCompleteResponse(BaseModel):

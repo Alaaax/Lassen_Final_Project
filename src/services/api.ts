@@ -2,7 +2,7 @@
 // src/services/api.ts
 // =============================================================
 //const BASE = "http://localhost:8000";// اذا بتشغلينه لوكال خليه localhost:8000
-const BASE = "https://lassen-final-project-1.onrender.com";
+ const BASE = "https://lassen-final-project-1.onrender.com";
 
 export class APIError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -162,6 +162,8 @@ export interface CompleteVerseResponse {
       similarity?: number;
     };
     matched_verse?: string;
+    source?: "database" | "web";
+    source_label?: string;
   }>;
   current_index?: number;
   total_candidates?: number;

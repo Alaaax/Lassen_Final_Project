@@ -322,6 +322,8 @@ async def complete_write_poetry(req: WriteCompleteRequest):
                     "poem_verses": alt.get("poem_verses", []),
                     "meta": alt_meta,
                     "matched_verse": alt.get("matched_verse"),
+                    "source": str(alt.get("source") or "database"),
+                    "source_label": str(alt.get("source_label") or "قاعدة البيانات"),
                 }
             )
 
