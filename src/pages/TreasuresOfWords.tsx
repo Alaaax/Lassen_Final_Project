@@ -233,7 +233,7 @@ const TreasuresOfWords = () => {
                   {active.data.simple_tip && (
                     <div className="p-3 rounded-lg bg-brown-100/40 border border-brown-200/40">
                       <p className="font-body text-sm text-brown-700 leading-relaxed text-center">
-                        💡 {active.data.simple_tip}
+                         {active.data.simple_tip}
                       </p>
                     </div>
                   )}

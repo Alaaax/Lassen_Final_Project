@@ -53,14 +53,14 @@ except ModuleNotFoundError:
         from Backend.services.fasserha_service import fasserha_api_response, fasserha_stream
         from Backend.services.help_me_write_service import generate_poetry_response, complete_poem_response
     except ModuleNotFoundError:
-        from siwar_service import get_siwar_definition
-        from ai_service import explain_word, get_mood_response
-        from verse_searcher import search_verses_for_word
-        from poetry_retriever import get_poems_for_mood, get_db_stats
-        from journey_service import build_time_journey
-        from tts_service import synthesize_journey_speech
-        from fasserha_service import fasserha_api_response, fasserha_stream
-        from help_me_write_service import generate_poetry_response, complete_poem_response
+        from services.siwar_service import get_siwar_definition
+        from services.ai_service import explain_word, get_mood_response
+        from services.verse_searcher import search_verses_for_word
+        from services.poetry_retriever import get_poems_for_mood, get_db_stats
+        from services.journey_service import build_time_journey
+        from services.tts_service import synthesize_journey_speech
+        from services.fasserha_service import fasserha_api_response, fasserha_stream
+        from services.help_me_write_service import generate_poetry_response, complete_poem_response
         
 load_dotenv()
 
