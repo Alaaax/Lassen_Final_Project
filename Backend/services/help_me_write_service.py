@@ -268,7 +268,7 @@ def _fetch_aldiwan_poem(poem_url: str) -> dict[str, Any] | None:
     return {
         "url": poem_url,
         "title": title,
-        "poet": poet or "مجهول",
+        "poet": poet or "مجهول الهوية",
         "verses": verses,
     }
 
@@ -400,7 +400,7 @@ def find_poem_candidates_on_aldiwan(user_input: str, top_k: int = ALDIWAN_TOP_K)
 
 def validate_complete_input(text: str) -> tuple[bool, str]:
     if not text or not text.strip():
-        return False, "الرجاء إدخال بيت شعر أو أكثر."
+        return False, "الرجاء إدخال شطر او بيت شعر."
 
     if len(text) > 2000:
         return False, "النص طويل جدًا. الرجاء تقليل المدخل قليلًا."
@@ -410,11 +410,11 @@ def validate_complete_input(text: str) -> tuple[bool, str]:
         return False, "النص غير مفهوم. الرجاء إدخال بيت شعر عربي."
 
     if len(arabic_chars) < MIN_ARABIC_CHARS:
-        return False, "النص قصير جدًا. الرجاء إدخال بيت شعر كامل."
+        return False, "النص قصير جدًا. الرجاء إدخال شطر او بيت شعر كامل."
 
     text_no_spaces = re.sub(r"\s+", "", text)
     if text_no_spaces and (len(arabic_chars) / len(text_no_spaces) < 0.4):
-        return False, "النص غير مفهوم. الرجاء إدخال نص عربي واضح."
+        return False, "النص بلغة مختلفة، الرجاء كتابة نص عربي."
 
     return True, ""
 
@@ -611,7 +611,7 @@ def help_me_write_complete_api_response(user_input: str) -> dict[str, Any]:
             "poem_verses": [],
             "meta": {},
             "alternatives": [],
-            "message": "هذا البيت غير موجود في قاعدة البيانات.",
+            "message": "عذراً، لم نتمكن من العثور على القصيدة",
         }
 
     input_lines = _normalized_input_lines(user_input.strip())
