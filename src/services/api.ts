@@ -11,7 +11,7 @@ export class APIError extends Error {
 
 async function post<T>(path: string, body: unknown): Promise<T> {
   let res: Response;
-  try {
+  try {ل
     res = await fetch(`${BASE}${path}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
