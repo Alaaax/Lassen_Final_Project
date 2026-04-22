@@ -2,7 +2,7 @@
 // src/services/api.ts
 // =============================================================
 //const BASE = "http://localhost:8000";// اذا بتشغلينه لوكال خليه localhost:8000
-// const BASE = "http://localhost:8000";
+//const BASE = "http://localhost:8000";
 const BASE = "https://lassen-final-project-1.onrender.com";
 
 export class APIError extends Error {
@@ -228,6 +228,36 @@ export interface InterpretResponse {
 export const interpretVerses = (poem: string, depth: "brief" | "deep" = "brief") =>
   post<InterpretResponse>("/api/interpret/verses", { poem, depth });
 
+
+// ── لعبة الحفظ الشعري ──────────────────────────────────────────
+
+export interface PoetryGameRoundVerse {
+  verse_index: number;
+  verse: string;
+}
+
+export interface PoetryGameRound {
+  poem_id: string;
+  poet_name: string;
+  verses: PoetryGameRoundVerse[];
+  round_seconds: number;
+}
+
+export interface PoetryGameRoundResponse {
+  success: boolean;
+  poem_id: string;
+  poet_name: string;
+  verses: PoetryGameRoundVerse[];
+  round_seconds: number;
+  message?: string;
+}
+
+export interface PoetryGameRoundRequest {
+  exclude_poem_ids?: string[];
+}
+
+export const getPoetryGameRound = (payload: PoetryGameRoundRequest = {}) =>
+  post<PoetryGameRoundResponse>("/api/game/round", payload);
 export interface InterpretStreamHandlers {
   onClassify?: (data: {
     meter: InterpretMeter;
